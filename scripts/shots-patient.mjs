@@ -1,0 +1,16 @@
+import { chromium } from "playwright";
+const out = process.argv[2];
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+await page.goto("http://localhost:3000");
+await page.evaluate(() => { localStorage.setItem("queuemind.persona", "patient"); localStorage.setItem("queuemind.intro-seen", "1"); });
+await page.reload();
+await page.getByRole("button", { name: /Hina Shah/ }).click({ timeout: 90000 });
+await page.waitForTimeout(2000);
+await page.screenshot({ path: `${out}/patient-sms.png` });
+await page.evaluate(() => localStorage.setItem("queuemind.persona", "tv"));
+await page.reload();
+await page.waitForTimeout(5000);
+await page.screenshot({ path: `${out}/tv-emergency.png` });
+await browser.close();
+console.log("ok");

@@ -1,0 +1,26 @@
+// Drive one agent scenario through the UI and capture the result (dev-only helper).
+import { chromium } from "playwright";
+const out = process.argv[2];
+const scenario = process.argv[3] ?? "Doctor stuck in traffic";
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+const errors = [];
+page.on("pageerror", (e) => errors.push(String(e)));
+await page.goto("http://localhost:3000");
+await page.evaluate(() => { localStorage.setItem("queuemind.persona", "desk"); localStorage.setItem("queuemind.intro-seen", "1"); localStorage.removeItem("queuemind.thread"); });
+await page.reload();
+await page.getByRole("button", { name: scenario }).waitFor({ timeout: 90000 });
+await page.waitForTimeout(1500);
+await page.getByRole("button", { name: scenario }).click();
+await page.waitForTimeout(9000);
+await page.screenshot({ path: `${out}/agent-running.png` });
+await page.waitForFunction(() => /tool calls ·/.test(document.body.innerText) || /rate limit|failed/i.test(document.body.innerText), null, { timeout: 280000 }).catch(() => errors.push("timeout waiting for agent"));
+await page.waitForTimeout(2500);
+await page.screenshot({ path: `${out}/agent-done.png` });
+const panel = page.locator("section").filter({ hasText: "QueueMind agent" }).first();
+await panel.screenshot({ path: `${out}/agent-panel.png` });
+await page.getByRole("button", { name: /Outbox/ }).click();
+await page.waitForTimeout(1500);
+await page.screenshot({ path: `${out}/outbox.png` });
+await browser.close();
+console.log(errors.length ? errors.join("\n") : "ok");
