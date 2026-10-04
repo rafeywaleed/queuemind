@@ -7,6 +7,7 @@
 import { createMiddleware } from "langchain";
 import { db } from "../db/client";
 import { reasoningPool, type PoolMember } from "./models";
+import { colabEndpoint } from "./router";
 
 const RPM = Number(process.env.REASONING_RPM_PER_MODEL ?? 5);
 const CALL_TIMEOUT_MS = Number(process.env.REASONING_CALL_TIMEOUT_MS ?? 40_000);
@@ -128,6 +129,8 @@ export function quotaAwarePoolMiddleware() {
         }
         const member = ready.m;
         tried.add(member.id);
+        const model = await member.resolve();
+        if (!model) continue; // e.g. Colab notebook not running: skip without penalty
         const started = Date.now();
         noteLocally(member.id, started);
         let timer: ReturnType<typeof setTimeout> | undefined;
@@ -137,7 +140,7 @@ export function quotaAwarePoolMiddleware() {
             timer = setTimeout(() => reject(new Error(`timeout: ${member.id} took over ${CALL_TIMEOUT_MS / 1000}s`)), CALL_TIMEOUT_MS);
           });
           const tools = (request.tools ?? []).filter((t) => !HIDDEN_TOOLS.has((t as { name?: string }).name ?? ""));
-          const result = await Promise.race([handler({ ...request, tools, model: member.model as never }), timeout]);
+          const result = await Promise.race([handler({ ...request, tools, model: model as never }), timeout]);
           await logCall(member, true, Date.now() - started);
           return result;
         } catch (err) {
@@ -161,7 +164,11 @@ export async function poolStatus() {
   ledgerCache = null;
   const ledger = await loadLedger();
   const now = Date.now();
+  const colabUp = !!(await colabEndpoint());
   return reasoningPool().map((m) => {
+    if (m.spec.provider === "colab" && !colabUp) {
+      return { member: m.id, usedToday: ledger.today.get(m.id) ?? 0, dailyBudget: null, lastMinute: 0, state: "offline" as const, readyInSec: null };
+    }
     const at = availableAt(m, ledger, now);
     return {
       member: m.id,

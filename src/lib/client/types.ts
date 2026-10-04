@@ -43,7 +43,7 @@ export interface PoolMemberStatus {
   usedToday: number;
   dailyBudget: number | null;
   lastMinute: number;
-  state: "ready" | "cooling" | "exhausted";
+  state: "ready" | "cooling" | "exhausted" | "offline";
   readyInSec: number | null;
 }
 
@@ -51,6 +51,7 @@ export interface RouterStatus {
   selfHosted: { registered: boolean; healthy: boolean; pingMs: number | null; model: string | null; lastSeenAt: string | null };
   fastLaneOrder: string[];
   reasoning: { provider: string };
+  decision?: { online: boolean; model: string | null; lastSeenAt: string | null };
   lastHour: Record<string, { calls: number; ok: number; avgLatencyMs: number | null }>;
   reasoningPool: PoolMemberStatus[];
 }

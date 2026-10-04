@@ -228,7 +228,7 @@ function PlanCard({ todos }: { todos: Turn["todos"] }) {
   );
 }
 
-const STEP_META: Record<string, { icon: typeof Bot; label: (a: Record<string, unknown>) => string }> = {
+export const STEP_META: Record<string, { icon: typeof Bot; label: (a: Record<string, unknown>) => string }> = {
   get_queue_board: { icon: Activity, label: () => "Re-checked the live board" },
   read_file: { icon: BookOpen, label: (a) => `Opened playbook · ${String(a.file_path ?? "").split("/").filter(Boolean)[1] ?? a.file_path}` },
   report_doctor_delay: { icon: Activity, label: (a) => `Recorded delay · ${a.doctor} +${a.minutes}m` },
@@ -251,7 +251,7 @@ const STEP_META: Record<string, { icon: typeof Bot; label: (a: Record<string, un
   task: { icon: Bot, label: (a) => `Delegated to ${a.subagent_type ?? "subagent"}` },
 };
 
-function parseResult(result?: string): unknown {
+export function parseResult(result?: string): unknown {
   if (!result || result.startsWith("ERROR")) return null;
   try {
     return JSON.parse(result);
@@ -323,7 +323,7 @@ function StepView({ step }: { step: Step }) {
 }
 
 /** "#6 Usman Tariq: wait 6m → 35m (+29m), position 1 → 1" → a coloured chip. */
-function ImpactChip({ line }: { line: string }) {
+export function ImpactChip({ line }: { line: string }) {
   const delta = line.match(/\(([+-]?\d+)m\)/);
   const n = delta ? Number(delta[1]) : 0;
   const who = line.split(":")[0];

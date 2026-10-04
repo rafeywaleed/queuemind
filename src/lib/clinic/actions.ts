@@ -7,7 +7,7 @@ import { simulate, type Hypothetical } from "../queue/simulate";
 import type { ClinicState, Priority } from "../queue/types";
 import * as repo from "../db/repo";
 import { db } from "../db/client";
-import { classifyIntake, draftPatientMessage, type MessagePurpose } from "../llm/tasks";
+import { draftPatientMessage, triageWalkIn, type MessagePurpose } from "../llm/tasks";
 import { findDoctorByRef, findVisitByRef, fmtDate, fmtTime, greetingName, renderBoard, renderImpact, visitRef } from "./format";
 
 export type Actor = "agent" | "staff" | "system";
@@ -79,10 +79,11 @@ export async function registerWalkIn(
   actor: Actor,
 ) {
   return withImpact(async (state) => {
-    // 1. Deterministic red flags first, then the fast-lane model as a second opinion. Take the most severe.
+    // 1. Deterministic red flags first; then Laya (System 1, calibrated) or the LLM (System 2)
+    //    when Laya isn't confident. Take the most severe — automation never lowers priority.
     const redFlags = screenRedFlags(input.complaint);
     const specialties = [...new Set(state.doctors.filter((d) => d.status === "on_duty").map((d) => d.specialty))];
-    const intake = await classifyIntake(input.complaint, specialties.length ? specialties : ["General"]);
+    const intake = await triageWalkIn(input.complaint, specialties.length ? specialties : ["General Medicine"]);
     const priority = maxPriority(redFlags.level, intake.urgency);
 
     // 2. Pick the doctor where this patient would be seen soonest (what-if per candidate doctor).
@@ -108,7 +109,7 @@ export async function registerWalkIn(
       kind: "walk_in",
       status: "waiting",
       priority,
-      prioritySource: redFlags.level !== "normal" ? "red_flag_rules" : intake.urgency !== "normal" ? "intake_model" : "default",
+      prioritySource: redFlags.level !== "normal" ? "red_flag_rules" : intake.urgency !== "normal" ? (intake.decidedBy === "laya" ? "laya" : "intake_model") : "default",
       token,
       arrivedAt: new Date().toISOString(),
       estMinutes: intake.estMinutes,
@@ -128,8 +129,15 @@ export async function registerWalkIn(
       priority,
       triage: {
         redFlagRules: redFlags.matches.length ? redFlags.matches : "none",
-        intakeModel: { urgency: intake.urgency, specialty: intake.specialty, estMinutes: intake.estMinutes, servedBy: intake.servedBy },
-        rule: "final priority = most severe of (red-flag rules, intake model); automation never lowers it",
+        decidedBy:
+          intake.decidedBy === "laya"
+            ? `Laya decision model (System 1, ${intake.laya?.latencyMs} ms, specialty ${intake.laya?.answers.specialty?.confidence.toFixed(2)}, urgency ${intake.laya?.answers.urgency?.confidence.toFixed(2)})`
+            : intake.laya
+              ? `LLM fast lane (System 2) — Laya below confidence gate`
+              : `LLM fast lane (System 2) — Laya offline`,
+        laya: intake.laya ? Object.fromEntries(Object.entries(intake.laya.answers).map(([k, d]) => [k, `${d.value} (${d.confidence.toFixed(2)})`])) : "offline",
+        intake: { urgency: intake.urgency, specialty: intake.specialty, estMinutes: intake.estMinutes },
+        rule: "final priority = most severe of (red-flag rules, Laya, LLM); automation never lowers it",
       },
       instruction:
         priority === "emergency"

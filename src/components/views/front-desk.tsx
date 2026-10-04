@@ -2,7 +2,7 @@
 // Front desk: the receptionist's cockpit. Live plan on a timeline, queue per doctor with
 // one-click staff actions, alerts the agent can take over, and the agent console.
 import { useMemo, useState } from "react";
-import { AlertTriangle, BellRing, Clock, Footprints, Inbox, Siren, Sparkles, Timer, Users } from "lucide-react";
+import { AlertTriangle, BellRing, Inbox, Siren, Sparkles, Timer, Users } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { AgentConsole } from "@/components/qm/agent-console";
 import { Outbox } from "@/components/qm/outbox";
@@ -85,14 +85,12 @@ function Kpis({ board, pending }: { board: Board; pending: number }) {
   const items = [
     { label: "In waiting room", value: stats.waiting, icon: Users },
     { label: "Longest wait", value: `${stats.longest}m`, icon: Timer, warn: stats.longest >= 45 },
-    { label: "Average wait", value: `${stats.avg}m`, icon: Clock },
     { label: "Behind schedule", value: stats.behind, icon: AlertTriangle, warn: stats.behind > 0 },
     { label: "Emergencies", value: stats.emergencies, icon: Siren, danger: stats.emergencies > 0 },
     { label: "SMS to approve", value: pending, icon: BellRing, warn: pending > 0 },
-    { label: "Seen today", value: stats.seen, icon: Footprints },
   ];
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
       {items.map((it) => (
         <div
           key={it.label}
@@ -113,28 +111,34 @@ function Kpis({ board, pending }: { board: Board; pending: number }) {
 }
 
 function AlertsBar({ alerts, onDelegate, busy }: { alerts: Alert[]; onDelegate: (a: Alert) => void; busy: boolean }) {
+  const [all, setAll] = useState(false);
   if (!alerts.length) {
     return <div className="rounded-xl border border-qm-good/30 bg-qm-good/[0.06] px-4 py-2.5 text-sm text-qm-good">All clear: no delays, overruns or no-shows right now.</div>;
   }
+  const shown = all ? alerts : alerts.slice(0, 3);
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1">
-      {alerts.slice(0, 8).map((a, i) => (
-        <div
-          key={i}
-          className={cn(
-            "flex w-72 shrink-0 flex-col justify-between rounded-xl border px-3 py-2",
-            a.severity === "critical" ? "border-qm-emergency/50 bg-qm-emergency/[0.07]" : a.severity === "warning" ? "border-qm-urgent/40 bg-qm-urgent/[0.07]" : "bg-card",
-          )}
-        >
-          <div className="flex gap-2 text-[12.5px] leading-snug">
-            {a.severity === "critical" ? <Siren className="mt-0.5 size-4 shrink-0 text-qm-emergency" /> : <AlertTriangle className="mt-0.5 size-4 shrink-0 text-qm-urgent" />}
-            <span className="line-clamp-3">{a.message}</span>
-          </div>
-          <button type="button" disabled={busy} onClick={() => onDelegate(a)} className="mt-1.5 inline-flex items-center gap-1 self-end text-[11px] font-semibold text-primary hover:underline disabled:opacity-40">
-            <Sparkles className="size-3" /> Let the agent handle it
+    <div className="rounded-2xl border bg-card">
+      <div className="flex items-center gap-2 border-b px-4 py-2">
+        <AlertTriangle className="size-4 text-qm-urgent" />
+        <span className="text-sm font-semibold">Needs attention</span>
+        <span className="rounded-full bg-muted px-1.5 font-mono text-[11px]">{alerts.length}</span>
+        {alerts.length > 3 && (
+          <button type="button" onClick={() => setAll((a) => !a)} className="ml-auto text-xs font-medium text-primary hover:underline">
+            {all ? "Show less" : `Show all ${alerts.length}`}
           </button>
-        </div>
-      ))}
+        )}
+      </div>
+      <ul className="divide-y">
+        {shown.map((a, i) => (
+          <li key={i} className="flex items-center gap-3 px-4 py-2">
+            {a.severity === "critical" ? <Siren className="size-4 shrink-0 text-qm-emergency" /> : <span className={cn("size-2 shrink-0 rounded-full", a.severity === "warning" ? "bg-qm-urgent" : "bg-muted-foreground/50")} />}
+            <span className="flex-1 text-[13px]">{a.message}</span>
+            <button type="button" disabled={busy} onClick={() => onDelegate(a)} className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-primary hover:underline disabled:opacity-40">
+              <Sparkles className="size-3" /> Agent, handle it
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

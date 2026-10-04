@@ -172,3 +172,9 @@
 .prose-qm li > ul, .prose-qm li > ol { margin-top: 0.2rem; }
 .prose-qm h1, .prose-qm h2, .prose-qm h3 { font-weight: 650; font-size: 0.9rem; }
 .prose-qm code { font-family: var(--font-jetbrains); font-size: 0.8em; background: var(--muted); padding: 0 0.25rem; border-radius: 0.25rem; }
+
+/* Harness graph animations */
+@keyframes qm-dash { to { stroke-dashoffset: -28; } }
+.qm-flow { animation: qm-dash 0.9s linear infinite; }
+@keyframes qm-node-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+.qm-node-pulse { animation: qm-node-pulse 1.2s ease-in-out infinite; }

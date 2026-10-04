@@ -1,0 +1,20 @@
+// Drive one Lab scenario and capture mid-run + finished (dev-only helper).
+import { chromium } from "playwright";
+const out = process.argv[2];
+const label = process.argv[3] ?? "Doctor called away";
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+await page.goto("http://localhost:3000");
+await page.evaluate(() => { localStorage.setItem("queuemind.persona", "lab"); localStorage.setItem("queuemind.intro-seen", "1"); localStorage.removeItem("queuemind.thread"); });
+await page.reload();
+const btn = page.getByRole("button", { name: new RegExp(label) });
+await btn.waitFor({ timeout: 90000 });
+await page.waitForTimeout(2500);
+await btn.click();
+await page.waitForFunction(() => document.querySelectorAll(".qm-flow").length > 0 && /Opened playbook|Recorded|Registered|Moved/.test(document.body.innerText), null, { timeout: 120000 }).catch(() => {});
+await page.screenshot({ path: `${out}/lab-running.png` });
+await page.waitForFunction(() => /function calls ·/.test(document.body.innerText) || /limit|failed/i.test(document.body.innerText), null, { timeout: 280000 }).catch(() => {});
+await page.waitForTimeout(2500);
+await page.screenshot({ path: `${out}/lab-done.png`, fullPage: true });
+await browser.close();
+console.log("ok");

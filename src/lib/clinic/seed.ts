@@ -31,27 +31,27 @@ interface SeedVisit {
 const VISITS: SeedVisit[] = [
   // Earlier today
   { token: 1, patient: "Hamza Qureshi", phone: "+92300000101", language: "en", doctor: "ayesha", kind: "appointment", status: "done", scheduled: -95, arrived: -100, started: -94, ended: -82, reason: "Blood pressure review" },
-  { token: 2, patient: "Nadia Hussain", phone: "+92300000102", language: "ur", doctor: "ayesha", kind: "walk_in", status: "done", arrived: -80, started: -55, ended: -40, reason: "Persistent cough, 2 weeks" },
+  { token: 2, patient: "Nadia Hussain", phone: "+919800000102", language: "ur", doctor: "ayesha", kind: "walk_in", status: "done", arrived: -80, started: -55, ended: -40, reason: "Persistent cough, 2 weeks" },
 
   // Dr. Ayesha Khan — General: steady, mid-consult
   { token: 3, patient: "Omar Farooq", phone: "+92300000103", language: "en", doctor: "ayesha", kind: "appointment", status: "in_consult", scheduled: -10, arrived: -18, started: -6, reason: "Diabetes medication review" },
-  { token: 4, patient: "Zainab Ali", phone: "+92300000104", language: "ur", doctor: "ayesha", kind: "appointment", status: "waiting", scheduled: 5, arrived: -12, reason: "Follow-up on lab results" },
+  { token: 4, patient: "Zainab Ali", phone: "+919800000104", language: "ur", doctor: "ayesha", kind: "appointment", status: "waiting", scheduled: 5, arrived: -12, reason: "Follow-up on lab results" },
   { token: 6, patient: "Usman Tariq", phone: "+92300000106", language: "ur", doctor: "ayesha", kind: "walk_in", status: "waiting", arrived: -15, reason: "Sore throat and mild fever" },
-  { token: 11, patient: "Fatima Siddiqui", phone: "+92300000111", language: "en", doctor: "ayesha", kind: "appointment", status: "scheduled", scheduled: 30, reason: "Annual check-up" },
+  { token: 11, patient: "Fatima Siddiqui", phone: "+919800000111", language: "en", doctor: "ayesha", kind: "appointment", status: "scheduled", scheduled: 30, reason: "Annual check-up" },
   { token: 12, patient: "Ali Raza", phone: "+92300000112", language: "ur", doctor: "ayesha", kind: "appointment", status: "scheduled", scheduled: 45, reason: "Back pain" },
 
   // Dr. Bilal Ahmed — General: consult badly overrunning, queue piling up
-  { token: 5, patient: "Saima Javed", phone: "+92300000105", language: "ur", doctor: "bilal", kind: "appointment", status: "in_consult", scheduled: -30, arrived: -35, started: -26, est: 12, reason: "Multiple chronic conditions review" },
+  { token: 5, patient: "Saima Javed", phone: "+919800000105", language: "ur", doctor: "bilal", kind: "appointment", status: "in_consult", scheduled: -30, arrived: -35, started: -26, est: 12, reason: "Multiple chronic conditions review" },
   { token: 7, patient: "Bilal Akhtar", phone: "+92300000107", language: "en", doctor: "bilal", kind: "walk_in", status: "waiting", arrived: -22, reason: "Sprained ankle" },
-  { token: 8, patient: "Hina Shah", phone: "+92300000108", language: "ur", doctor: "bilal", kind: "appointment", status: "waiting", scheduled: -15, arrived: -20, reason: "Thyroid follow-up" },
+  { token: 8, patient: "Hina Shah", phone: "+919800000108", language: "ur", doctor: "bilal", kind: "appointment", status: "waiting", scheduled: -15, arrived: -20, reason: "Thyroid follow-up" },
   { token: 9, patient: "Kamran Iqbal", phone: "+92300000109", language: "en", doctor: "bilal", kind: "appointment", status: "waiting", scheduled: 0, arrived: -4, reason: "Skin rash" },
-  { token: 13, patient: "Maryam Butt", phone: "+92300000113", language: "ur", doctor: "bilal", kind: "appointment", status: "scheduled", scheduled: 15, reason: "Migraine" },
+  { token: 13, patient: "Maryam Butt", phone: "+919800000113", language: "ur", doctor: "bilal", kind: "appointment", status: "scheduled", scheduled: 15, reason: "Migraine" },
   { token: 14, patient: "Daniyal Mirza", phone: "+92300000114", language: "en", doctor: "bilal", kind: "appointment", status: "scheduled", scheduled: 30, reason: "Vaccination record" },
 
   // Dr. Sara Malik — Pediatrics: one likely no-show, one running late
-  { token: 10, patient: "Ayaan Rehman (child)", phone: "+92300000110", language: "ur", doctor: "sara", kind: "walk_in", status: "waiting", arrived: -9, reason: "Child with ear pain" },
+  { token: 10, patient: "Ayaan Rehman (child)", phone: "+919800000110", language: "ur", doctor: "sara", kind: "walk_in", status: "waiting", arrived: -9, reason: "Child with ear pain" },
   { token: 15, patient: "Inaya Khalid (child)", phone: "+92300000115", language: "en", doctor: "sara", kind: "appointment", status: "scheduled", scheduled: -26, reason: "Growth check" },
-  { token: 16, patient: "Rayan Abbasi (child)", phone: "+92300000116", language: "ur", doctor: "sara", kind: "appointment", status: "scheduled", scheduled: -14, reason: "Vaccination" },
+  { token: 16, patient: "Rayan Abbasi (child)", phone: "+919800000116", language: "ur", doctor: "sara", kind: "appointment", status: "scheduled", scheduled: -14, reason: "Vaccination" },
   { token: 17, patient: "Zoya Imran (child)", phone: "+92300000117", language: "en", doctor: "sara", kind: "appointment", status: "scheduled", scheduled: 20, reason: "Allergy review" },
 ];
 
@@ -147,7 +147,7 @@ export const SCENARIOS = [
   {
     id: "routine-walk-in",
     title: "Routine walk-in",
-    event: "[EVENT] Walk-in: Sana Tariq, phone +92300000198, English. Needs a repeat prescription for her asthma inhaler, no other complaints.",
+    event: "[EVENT] Walk-in: Sana Tariq, phone +9198000000198, English. Needs a repeat prescription for her asthma inhaler, no other complaints.",
   },
   {
     id: "sweep",

@@ -39,10 +39,12 @@ function userFiles(files: Record<string, unknown> | undefined) {
 }
 
 export async function* runAgentTurn(threadId: string, message: string): AsyncGenerator<AgentEvent> {
-  const agent = await getAgent();
   const config = { configurable: { thread_id: threadId }, streamMode: ["updates", "messages"] as const, recursionLimit: 80 };
   const toolNames = new Map<string, string>();
+  // Middleware nodes can re-emit the same messages in "updates"; emit each call/result once.
+  const seen = new Set<string>();
   try {
+    const agent = await getAgent();
     // Attach the live board so the agent starts informed — one fewer model step per turn.
     const snapshot = JSON.stringify(await board());
     const content = `${message}\n\n<board_at_message_time>\n${snapshot}\n</board_at_message_time>`;
@@ -69,6 +71,9 @@ export async function* runAgentTurn(threadId: string, message: string): AsyncGen
         }
         const messages = Array.isArray(u.messages) ? (u.messages as BaseMessage[]) : [];
         for (const m of messages) {
+          const key = ToolMessage.isInstance(m) ? `r:${m.tool_call_id}` : `m:${m.id ?? JSON.stringify((m as AIMessage).tool_calls ?? textOf(m.content)).slice(0, 200)}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
           if (AIMessage.isInstance(m) && !m.tool_calls?.length && textOf(m.content).trim()) {
             // Authoritative final answer (token streaming can be lossy across model fallbacks).
             yield { type: "final", text: textOf(m.content) };

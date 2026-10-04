@@ -2,6 +2,7 @@
 // even when every model is down.
 import { z } from "zod";
 import { fastJson, type ProviderName } from "./router";
+import { decide, type Decision } from "./decision";
 import type { Priority } from "../queue/types";
 
 const IntakeSchema = z.object({
@@ -85,4 +86,66 @@ export async function draftPatientMessage(input: {
   } catch {
     return { body: template, servedBy: "template", guard: "fast lane unavailable — used template" };
   }
+}
+
+const DECISION_CONFIDENCE = Number(process.env.DECISION_CONFIDENCE ?? 0.75);
+const SPECIALTY_HINT: Record<string, string> = {
+  "General Medicine": "adults: fever, cough, pain, infections, chronic conditions, prescriptions, check-ups",
+  Pediatrics: "children, babies and infants: any symptom in a child",
+};
+const URGENCY_SCALE = ["routine", "soon", "emergency"] as const;
+const URGENCY_TO_PRIORITY: Record<string, Priority> = { routine: "normal", soon: "urgent", emergency: "emergency" };
+
+export interface TriageResult extends IntakeResult {
+  /** Which system made the call: Laya (System 1), the LLM (System 2), or the rule-only fallback. */
+  decidedBy: "laya" | "llm" | "fallback";
+  laya: { answers: Record<string, Decision>; latencyMs: number; model: string; confident: boolean } | null;
+}
+
+/**
+ * Walk-in triage, System 1 / System 2:
+ * Laya answers typed questions with calibrated probabilities in milliseconds. If it is confident
+ * on both specialty and urgency, its answer stands. Otherwise the LLM fast lane decides. Either way
+ * Laya's emergency probability can only raise urgency (safety ratchet).
+ */
+export async function triageWalkIn(complaint: string, specialties: string[]): Promise<TriageResult> {
+  const laya = await decide("intake_triage", complaint, {
+    specialty: {
+      type: "choice",
+      instructions: "Which clinic department should see this patient?",
+      criteria: Object.fromEntries(specialties.map((s) => [s, SPECIALTY_HINT[s] ?? s])),
+    },
+    urgency: { type: "score", instructions: "How urgently does this patient need to be seen?", criteria: [...URGENCY_SCALE] },
+    emergency: {
+      type: "noul",
+      instructions: "Does this describe a possible medical emergency, such as chest pain, trouble breathing, stroke signs, heavy bleeding or loss of consciousness?",
+    },
+  });
+
+  const spec = laya?.answers.specialty;
+  const urg = laya?.answers.urgency;
+  // Two independent emergency signals from Laya: the yes/no question, and the probability mass on the
+  // "emergency" urgency level. Either one can raise priority; neither can lower it.
+  const emergencyP = Math.max(laya?.answers.emergency?.confidence ?? 0, urg?.probabilities?.emergency ?? 0);
+  const confident = !!(spec && urg && specialties.includes(spec.value) && spec.confidence >= DECISION_CONFIDENCE && urg.confidence >= DECISION_CONFIDENCE);
+  const layaInfo = laya ? { answers: laya.answers, latencyMs: laya.latencyMs, model: laya.model, confident } : null;
+  const layaEmergency: Priority = emergencyP >= 0.5 ? "emergency" : "normal";
+
+  if (confident) {
+    const urgency = URGENCY_TO_PRIORITY[urg!.value] ?? "normal";
+    return {
+      specialty: spec!.value,
+      estMinutes: null,
+      urgency: urgency === "emergency" || layaEmergency === "emergency" ? "emergency" : urgency,
+      summary: complaint.slice(0, 120),
+      servedBy: "fallback",
+      decidedBy: "laya",
+      laya: layaInfo,
+    };
+  }
+
+  const llm = await classifyIntake(complaint, specialties);
+  const rank: Record<Priority, number> = { emergency: 0, urgent: 1, normal: 2 };
+  const urgency = rank[layaEmergency] < rank[llm.urgency] ? layaEmergency : llm.urgency;
+  return { ...llm, urgency, decidedBy: llm.servedBy === "fallback" ? "fallback" : "llm", laya: layaInfo };
 }

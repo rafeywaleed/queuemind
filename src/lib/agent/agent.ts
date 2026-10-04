@@ -39,7 +39,8 @@ Write the full report to /reports/ and return a 5-line summary to the caller.`,
 export async function buildAgent(clinic: ClinicPolicy) {
   return createDeepAgent({
     name: "queuemind",
-    model: reasoningPool()[0].model,
+    // Default model for the graph; the pool middleware picks the actual member per call.
+    model: (await reasoningPool().find((m) => m.spec.provider !== "colab")!.resolve())!,
     // Per-turn budget: a turn can't drift toward the 300 s serverless limit or drain the free quota.
     middleware: [todoListMiddleware(), modelCallLimitMiddleware({ runLimit: 14, exitBehavior: "end" }), quotaAwarePoolMiddleware()],
     systemPrompt: systemPrompt(clinic),

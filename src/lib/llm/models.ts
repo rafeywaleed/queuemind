@@ -2,6 +2,8 @@
 // one-env-var switch if the Gemini free quota runs out mid-review.
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatOpenAI } from "@langchain/openai";
+import { ChatMistralAI } from "@langchain/mistralai";
+import { colabEndpoint } from "./router";
 import { convertToOpenAITool } from "@langchain/core/utils/function_calling";
 import { isOpenAITool } from "@langchain/core/language_models/base";
 
@@ -58,7 +60,9 @@ class GeminiChat extends ChatGoogleGenerativeAI {
   }
 }
 
-export type ModelSpec = { provider: "gemini" | "groq"; model: string; keyIndex: number };
+export type Provider = "gemini" | "groq" | "mistral" | "colab";
+export type ModelSpec = { provider: Provider; model: string; keyIndex: number };
+type ChatModel = ChatOpenAI | GeminiChat | ChatMistralAI;
 
 export interface PoolMember {
   /** Stable id used by the quota ledger, e.g. "gemini-3.8-flash@k1". Never contains the key itself. */
@@ -66,7 +70,8 @@ export interface PoolMember {
   spec: ModelSpec;
   /** Requests per day on the free tier; null = unknown (rely on 429 detection). */
   dailyBudget: number | null;
-  model: ChatOpenAI | GeminiChat;
+  /** Resolved at call time: the self-hosted model's address changes every Colab session. */
+  resolve: () => Promise<ChatModel | null>;
 }
 
 export function geminiKeys(): string[] {
@@ -75,18 +80,29 @@ export function geminiKeys(): string[] {
   return keys;
 }
 
-function makeModel(spec: ModelSpec) {
-  if (spec.provider === "groq") {
-    return new ChatOpenAI({
-      model: spec.model,
-      apiKey: process.env.GROQ_API_KEY,
-      configuration: { baseURL: "https://api.groq.com/openai/v1" },
-      temperature: 0,
-      maxRetries: 0,
-    });
+// maxRetries 0 everywhere: on a quota error the pool moves to the next member instead of sleeping.
+function makeModel(spec: ModelSpec): () => Promise<ChatModel | null> {
+  switch (spec.provider) {
+    case "groq": {
+      const m = new ChatOpenAI({ model: spec.model, apiKey: process.env.GROQ_API_KEY, configuration: { baseURL: "https://api.groq.com/openai/v1" }, temperature: 0, maxRetries: 0 });
+      return async () => m;
+    }
+    case "mistral": {
+      const m = new ChatMistralAI({ model: spec.model, apiKey: process.env.MISTRAL_API_KEY, temperature: 0, maxRetries: 0 });
+      return async () => m;
+    }
+    case "colab":
+      return async () => {
+        const ep = await colabEndpoint();
+        if (!ep) return null;
+        // Ollama's OpenAI-compatible endpoint behind the notebook's Cloudflare tunnel.
+        return new ChatOpenAI({ model: ep.model, apiKey: "ollama", configuration: { baseURL: `${ep.url.replace(/\/$/, "")}/v1` }, temperature: 0, maxRetries: 0 });
+      };
+    default: {
+      const m = new GeminiChat({ model: spec.model, apiKey: geminiKeys()[spec.keyIndex], temperature: 0, maxRetries: 0 });
+      return async () => m;
+    }
   }
-  // maxRetries 0: on a quota error we move to the next member instead of sleeping on this one.
-  return new GeminiChat({ model: spec.model, apiKey: geminiKeys()[spec.keyIndex], temperature: 0, maxRetries: 0 });
 }
 
 /** Free-tier daily request caps observed for this account (Flash family: 20/day/project/model). */
@@ -98,8 +114,10 @@ function dailyBudget(model: string): number | null {
 }
 
 /**
- * Ordered reasoning pool: every model × every Gemini key (separate projects = separate quotas),
- * best model first. Override with REASONING_POOL="gemini:model,groq:model".
+ * Ordered reasoning pool, best first. Gemini members are multiplied by API key (separate projects
+ * = separate quotas). Mistral's free tier carries volume; the self-hosted Llama on Colab is the
+ * last resort that keeps the clinic running when every cloud quota is spent.
+ * Override with REASONING_POOL="gemini:model,mistral:model,colab:llama,groq:model".
  */
 export function reasoningPool(): PoolMember[] {
   const models =
@@ -110,21 +128,26 @@ export function reasoningPool(): PoolMember[] {
           // 3.5 Flash first: 2-6 s per step vs 10-25 s for 3.8 Flash, with the same tool accuracy here.
           "gemini:gemini-3.5-flash",
           `gemini:${process.env.GEMINI_MODEL ?? "gemini-3.8-flash"}`,
+          // Free Mistral tier on this account: ministral-14b 30 req/min, ministral-8b 188 req/min.
+          ...(process.env.MISTRAL_API_KEY ? [`mistral:${process.env.MISTRAL_MODEL ?? "ministral-14b-latest"}`, "mistral:ministral-8b-latest"] : []),
           "gemini:gemini-3-flash-preview",
           "gemini:gemini-3.1-flash-lite",
           "gemini:gemini-3.5-flash-lite",
+          "colab:self-hosted-llama",
           "gemini:gemma-4-26b-a4b-it",
           ...(process.env.GROQ_API_KEY ? ["groq:openai/gpt-oss-120b"] : []),
         ].join(","));
   const keyCount = Math.max(1, geminiKeys().length);
   const members: PoolMember[] = [];
   for (const entry of models.split(",").map((e) => e.trim()).filter(Boolean)) {
-    const [provider, ...rest] = entry.split(":");
+    const [raw, ...rest] = entry.split(":");
+    const provider = (["groq", "mistral", "colab"].includes(raw) ? raw : "gemini") as Provider;
     const model = rest.join(":");
-    const keys = provider === "groq" ? 1 : keyCount;
+    const keys = provider === "gemini" ? keyCount : 1;
     for (let k = 0; k < keys; k++) {
-      const spec: ModelSpec = { provider: provider === "groq" ? "groq" : "gemini", model, keyIndex: k };
-      members.push({ id: provider === "groq" ? model : `${model}@k${k + 1}`, spec, dailyBudget: dailyBudget(model), model: makeModel(spec) });
+      const spec: ModelSpec = { provider, model, keyIndex: k };
+      const id = provider === "gemini" ? `${model}@k${k + 1}` : provider === "colab" ? "colab-llama (self-hosted)" : provider === "mistral" ? `mistral/${model}` : model;
+      members.push({ id, spec, dailyBudget: dailyBudget(model), resolve: makeModel(spec) });
     }
   }
   return members;

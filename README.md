@@ -28,7 +28,7 @@ Fast lane (intake triage, SMS drafts): Colab Llama (self-hosted, if online) → 
 | Model router | `src/lib/llm/router.ts` | Fast lane: fallback chain with circuit breaker, zod-validated JSON, per-call telemetry. |
 | Reasoning pool | `src/lib/llm/pool.ts` | Agent middleware. Free tiers cap each model separately (Gemini Flash: 5 req/min, 20 req/day), so each agent step goes to the first model with budget left: local per-model RPM accounting, cooldown on 429 (hour-long for daily caps), 40 s per-call timeout, skip on Groq's 8k-TPM limit. |
 | Gemini schema adapter | `src/lib/llm/models.ts` | Converts tool JSON schemas to the OpenAPI subset Gemini accepts (no type arrays / exclusive bounds). |
-| Colab runtime | `colab/queuemind_llama.ipynb` | Ollama + Llama on free T4, Cloudflare tunnel, self-registers via heartbeat. |
+| Colab runtime | `colab/queuemind_selfhosted.ipynb` | Ollama + Llama on free T4, Cloudflare tunnel, self-registers via heartbeat. |
 
 ### Safety & trust mechanisms
 - **Safety ratchet** — red-flag rules and the intake model can only *raise* priority; the agent's tool refuses to lower it. Only staff can.
@@ -45,7 +45,7 @@ Fast lane (intake triage, SMS drafts): Colab Llama (self-hosted, if online) → 
 3. `npm install`
 4. Seed + smoke test the agent from the CLI: `npm run smoke -- doctor-late` (scenario ids in `src/lib/clinic/seed.ts`).
 5. `npm run dev`, or deploy to Vercel with the same env vars.
-6. Optional: open `colab/queuemind_llama.ipynb` in Colab (T4), set secrets `APP_URL` + `RUNTIME_SECRET`, run all.
+6. Optional: open `colab/queuemind_selfhosted.ipynb` in Colab (T4), set secrets `APP_URL` + `RUNTIME_SECRET`, run all.
 
 `npm test` runs the queue-engine and policy tests.
 

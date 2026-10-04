@@ -5,8 +5,9 @@
 // Every call is logged to llm_calls so the UI can show which provider is serving and how fast.
 import { z } from "zod";
 import { db } from "../db/client";
+import { decisionEndpoint } from "./decision";
 
-export type ProviderName = "colab" | "groq" | "gemini";
+export type ProviderName = "colab" | "groq" | "mistral" | "gemini";
 
 interface Provider {
   name: ProviderName;
@@ -49,6 +50,15 @@ async function fastProviders(): Promise<Provider[]> {
       baseUrl: "https://api.groq.com/openai/v1",
       apiKey: process.env.GROQ_API_KEY,
       model: process.env.GROQ_FAST_MODEL ?? "openai/gpt-oss-20b",
+      timeoutMs: 10_000,
+    });
+  }
+  if (process.env.MISTRAL_API_KEY) {
+    providers.push({
+      name: "mistral",
+      baseUrl: "https://api.mistral.ai/v1",
+      apiKey: process.env.MISTRAL_API_KEY,
+      model: process.env.MISTRAL_FAST_MODEL ?? "ministral-8b-latest",
       timeoutMs: 10_000,
     });
   }
@@ -159,8 +169,10 @@ export async function routerStatus() {
       colabHealthy = false;
     }
   }
+  const laya = await decisionEndpoint();
+  const decisionStatus = { online: !!laya, model: laya?.model ?? null, lastSeenAt: laya?.lastSeenAt ?? null };
   const since = new Date(Date.now() - 3_600_000).toISOString();
-  const { data: calls } = await db().from("llm_calls").select("provider, ok, latency_ms, lane").eq("lane", "fast").gte("created_at", since).limit(1000);
+  const { data: calls } = await db().from("llm_calls").select("provider, ok, latency_ms, lane").in("lane", ["fast", "decision"]).gte("created_at", since).limit(1000);
   const stats: Record<string, { calls: number; ok: number; avgLatencyMs: number | null }> = {};
   for (const c of calls ?? []) {
     const s = (stats[c.provider] ??= { calls: 0, ok: 0, avgLatencyMs: null });
@@ -172,7 +184,13 @@ export async function routerStatus() {
   }
   return {
     selfHosted: { registered: !!colab, healthy: colabHealthy, pingMs: colabPingMs, model: colab?.model ?? null, lastSeenAt: colab?.lastSeenAt ?? null },
-    fastLaneOrder: [...(colabHealthy ? ["colab"] : []), ...(process.env.GROQ_API_KEY ? ["groq"] : []), ...(process.env.GOOGLE_API_KEY ? ["gemini"] : [])],
+    fastLaneOrder: [
+      ...(colabHealthy ? ["colab"] : []),
+      ...(process.env.GROQ_API_KEY ? ["groq"] : []),
+      ...(process.env.MISTRAL_API_KEY ? ["mistral"] : []),
+      ...(process.env.GOOGLE_API_KEY ? ["gemini"] : []),
+    ],
+    decision: decisionStatus,
     reasoning: { provider: process.env.MAIN_MODEL_PROVIDER ?? "gemini" },
     lastHour: stats,
   };
