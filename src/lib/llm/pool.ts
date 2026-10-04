@@ -147,7 +147,9 @@ export function quotaAwarePoolMiddleware() {
           const message = err instanceof Error ? err.message : String(err);
           lastError = err;
           await logCall(member, false, Date.now() - started, message);
-          const cool = cooldownFor(message);
+          // A self-hosted endpoint that answers oddly (wrong server behind the tunnel, model not
+          // loaded) is skipped for a while rather than failing the clinic's turn.
+          const cool = cooldownFor(message) ?? (member.spec.provider === "colab" ? 5 * 60_000 : null);
           if (cool === null) throw err;
           await setCooldown(member.id, cool, message);
         } finally {

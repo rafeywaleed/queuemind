@@ -124,9 +124,13 @@ export async function triageWalkIn(complaint: string, specialties: string[]): Pr
 
   const spec = laya?.answers.specialty;
   const urg = laya?.answers.urgency;
-  // Two independent emergency signals from Laya: the yes/no question, and the probability mass on the
-  // "emergency" urgency level. Either one can raise priority; neither can lower it.
-  const emergencyP = Math.max(laya?.answers.emergency?.confidence ?? 0, urg?.probabilities?.emergency ?? 0);
+  // Two emergency signals from Laya: the yes/no question and the probability on the "emergency"
+  // urgency level. Measured zero-shot on this clinic's cases, one signal alone over-triages (a
+  // child's ear ache scored 0.52 "emergency"), so Laya raises priority only when both agree, or the
+  // yes/no is very sure. It can never lower priority; red-flag rules and the LLM still apply.
+  const noulP = laya?.answers.emergency?.confidence ?? 0;
+  const urgEmergencyP = urg?.probabilities?.emergency ?? 0;
+  const emergencyP = (noulP >= 0.6 && urgEmergencyP >= 0.45) || noulP >= 0.8 ? Math.max(noulP, urgEmergencyP) : 0;
   const confident = !!(spec && urg && specialties.includes(spec.value) && spec.confidence >= DECISION_CONFIDENCE && urg.confidence >= DECISION_CONFIDENCE);
   const layaInfo = laya ? { answers: laya.answers, latencyMs: laya.latencyMs, model: laya.model, confident } : null;
   const layaEmergency: Priority = emergencyP >= 0.5 ? "emergency" : "normal";
