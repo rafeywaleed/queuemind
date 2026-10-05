@@ -2,7 +2,7 @@
 
 **Live app:** https://queuemind-demo.vercel.app (no login; press **Reset demo** any time)
 **Repo:** https://github.com/rafeywaleed/queuemind
-**Demo video:** *(link)*, 4:54
+**Demo video (4:54):** https://drive.google.com/drive/folders/1yMCYIzvEfPy7BTDp0hzLWLUfKiq2QVad?usp=sharing
 
 ---
 
@@ -11,6 +11,12 @@
 QueueMind is an AI agent that works next to a clinic receptionist and runs the waiting room. When a doctor is called away, a walk-in arrives with chest pain, a patient texts "running late", or a booked patient doesn't show, the agent works out what changes, updates the queue, and drafts messages to the right patients in their own language. Every wait time and position is calculated by plain code, never guessed by the AI. Every message the AI writes waits for a person to approve it. It is built on a LangGraph Deep Agent, Supabase and Next.js, and runs entirely on free tiers.
 
 ---
+
+## Why this problem, and why for Z360
+
+Choosing the problem took me a while. Before deciding, I went through the Zikra and Z360 websites. My understanding is that you already offer an AI call receptionist for clinics. So rather than build something that competes with that, I wanted something that **adds to it**.
+
+An AI receptionist on the phone books the appointment. QueueMind handles what happens on the day itself: the waiting room. It keeps the queue honest when a doctor runs late, triages walk-ins, handles no-shows and emergencies, and tells patients the truth about their wait. It is designed as an add-on that sits next to an existing booking or call system. Bookings come in; QueueMind keeps the day running.
 
 ## 1. The problem
 
@@ -59,6 +65,8 @@ The app shows one simulated clinic (City Care Family Clinic): three doctors (Dr.
 
 Every screen updates live through Supabase Realtime.
 
+I wanted someone opening the link for the first time to understand it without a call. That's why there's a simulation you can watch, a workflow view that shows every step, and a separate screen for each person involved: receptionist, doctor, patient, lobby and manager.
+
 ---
 
 ## 3. How the harness is designed
@@ -104,6 +112,8 @@ Every tool calls the **same service layer as the staff buttons**, so the agent a
 11. **Post-turn verifier:** after each turn, code checks that the event got its required action (an arrival must end in a check-in, a walk-in in a registration, a doctor leaving in a recorded absence, a delay in patient texts). If not, the agent is nudged once. Separately, a briefing that registered an emergency always opens with an EMERGENCY line.
 
 ### Three model lanes, all free
+
+Running at zero cost was a goal from the start, so that anyone can open the link and use it without me paying for an API. That shaped a lot of the design. For the quick-decision model, I first ran Laya myself on Google Colab, with a notebook and a tunnel. But Colab sleeps, and reviewers can't be asked to start a notebook, so I moved to the official public Laya Space on Hugging Face. For the main agent, I spread the work across several free API keys and providers (Gemini, Mistral, Groq) so that one provider's free limit doesn't stop the app.
 
 - **Reasoning lane (the agent):** a quota-aware pool of model × API-key members. Order: Gemini 3.5 / 3.8 Flash (2 keys) → Mistral ministral-14b / 8b → Gemini Flash preview / Flash-Lite → self-hosted Llama on Colab → Gemma 4 → Groq gpt-oss-120b. Free tiers allow about 5 requests a minute and 20 a day per Flash model, so every call is counted in a **shared ledger in Supabase** that all server instances read. On a 429 the pool waits out the provider's exact retry delay. Each call has a 40-second timeout.
 - **Fast lane (small structured jobs, such as triage and SMS drafts):** Colab Llama → Groq gpt-oss-20b → Mistral ministral-8b → Gemini Flash-Lite, with a circuit breaker, zod-validated JSON, and a template if everything fails.
@@ -151,11 +161,16 @@ Every tool calls the **same service layer as the staff buttons**, so the agent a
 
 ---
 
-## 5. How long it took
+## 5. How long it took, and how I built it
 
-About **20 hours of building**, from the first commit on the evening of **4 October** to the final tested deploy on the afternoon of **5 October** (21 commits). That came after time spent choosing the problem.
+**Time.** Earlier this week an EV scooter battery exploded inside my home and started a fire. Dealing with that meant I couldn't use the weekend as planned. I could only start building on **4 October**. The build took about **20 hours**, from the first commit that evening to the final tested deploy on the afternoon of **5 October** (21 commits). Before that, I spent time choosing the problem and reading about Z360.
 
-I built it with an AI pair programmer (Claude Code), as the brief encourages. The product choices, the split between code and AI, and the guardrails are decisions I can walk through in detail.
+**How it was built.** To be clear about what is mine:
+
+- **Mine:** the problem choice, the product scope, the architecture, and the harness design. That covers the code/AI/person split, the tools, the guardrails, the model lanes, the free-tier strategy, and the screens.
+- **Written with AI:** almost all of the code, using Claude Code. I directed it, reviewed what it produced, and tested it.
+
+I tested it as thoroughly as I could in the time: unit tests, a 51-check end-to-end suite against the live site, real agent runs, and a lot of clicking through every screen. Several of the guardrails above exist because that testing caught something. I'm happy to walk through any decision, trade-off or failure mode in the follow-up call.
 
 ---
 
