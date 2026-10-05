@@ -31,7 +31,7 @@ const MIDDLEWARE = [
 ];
 
 const GUARDRAILS = [
-  ["Code does the numbers", "Waits, start times, positions and fees come from the queue engine (13 unit tests). The model only quotes them."],
+  ["Code does the numbers", "Waits, start times, positions and fees come from the queue engine (21 unit tests). The model only quotes them."],
   ["Safety ratchet", "Red-flag rules and the triage model can only raise priority. The agent's tool refuses to lower it; only staff can."],
   ["Red flags before any model", "Chest pain, breathing, stroke signs… matched in English and Roman Urdu before the LLM sees the text."],
   ["Numbers guard", "If an SMS draft contains a number not in the facts, it's replaced by a template."],

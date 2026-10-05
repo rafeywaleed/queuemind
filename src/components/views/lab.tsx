@@ -285,7 +285,7 @@ function liveBadges(status: RouterStatus | null, data: ClinicData): Partial<Reco
     decision: status?.decision?.online ? { text: "Laya online", tone: "good" } : { text: "offline", tone: "muted" },
     db: { text: data.live ? "realtime" : "polling", tone: data.live ? "good" : "muted" },
     outbox: pending ? { text: `${pending} to approve`, tone: "warn" } : { text: "empty", tone: "muted" },
-    engine: { text: "13 tests", tone: "muted" },
+    engine: { text: "21 tests", tone: "muted" },
     skills: { text: "5", tone: "muted" },
     t_act: { text: "11", tone: "muted" },
   };
