@@ -149,6 +149,11 @@ export const SCENARIOS = [
       "[EVENT] Walk-in at the counter: Imran Shah, 58, phone +92300000199, speaks Urdu. He says: \"seene mein dard hai aur paseena aa raha hai, 20 minute se\" (chest pain and sweating for 20 minutes).",
   },
   {
+    id: "arrived-ill",
+    title: "Booked patient arrives ill",
+    event: "[EVENT] Ali Raza (#12, booked with Dr. Ayesha) just arrived at the desk early. He says he has severe chest pain and is sweating.",
+  },
+  {
     id: "routine-walk-in",
     title: "Routine walk-in",
     event: "[EVENT] Walk-in: Sana Tariq, phone +9198000000198, English. Needs a repeat prescription for her asthma inhaler, no other complaints.",

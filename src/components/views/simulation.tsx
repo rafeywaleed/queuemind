@@ -26,6 +26,7 @@ type Run =
 const EVENTS: { id: string; title: string; hint: string; danger?: boolean }[] = [
   { id: "doctor-late", title: "Doctor called away", hint: "Delay playbook → what-if → SMS" },
   { id: "chest-pain", title: "Chest-pain walk-in", hint: "Red flags → emergency first", danger: true },
+  { id: "arrived-ill", title: "Booked patient arrives ill", hint: "Check in → emergency → first free doctor", danger: true },
   { id: "routine-walk-in", title: "Routine walk-in", hint: "Laya triage → fastest doctor" },
   { id: "doctor-leaves", title: "Doctor leaves early", hint: "Move a whole queue" },
   { id: "sweep", title: "Monitoring sweep", hint: "No-shows, overruns" },

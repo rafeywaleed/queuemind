@@ -355,6 +355,13 @@ export async function markNoShow(ref: string, actor: Actor) {
 export async function setPriority(ref: string, level: Priority, reason: string, actor: Actor) {
   return withImpact(async (state) => {
     const v = needVisit(state, ref);
+    // An emergency must be in the building and in the queue. A booked patient who hasn't checked in
+    // isn't in any queue yet, so raising them alone would leave them invisible to every doctor.
+    if (level === "emergency" && v.status === "scheduled") {
+      throw new ClinicError(
+        `${v.patientName} (${visitRef(v)}) hasn't checked in, so they aren't in the queue yet. If they are at the clinic, check_in_patient "${visitRef(v)}" first, then raise priority. If they called from outside, tell them to call emergency services.`,
+      );
+    }
     if (v.priority === level) return { unchanged: true, priority: level };
     if (!isRaise(v.priority, level) && actor !== "staff") {
       throw new ClinicError(

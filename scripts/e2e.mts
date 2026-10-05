@@ -217,6 +217,13 @@ await check("patient text: confident replies were sent instantly (not drafts)", 
   assert(sent.length >= 1 && sent.every((n: any) => n.status === "sent"), `replies: ${sent.map((n: any) => n.status).join(",")}`);
 });
 
+await check("guardrail: a not-arrived patient can't be made an emergency (check in first)", async () => {
+  const b = await board();
+  const booked = b.visits.find((v: any) => v.status === "scheduled" && v.priority === "normal");
+  assert(booked, "need a booked, not-arrived patient");
+  return refused(() => clinic.setPriority(booked.token ? `#${booked.token}` : booked.id, "emergency", "e2e", "agent"), /hasn't checked in/i);
+});
+
 // ---------------------------------------------------------------- emergencies go to the first free doctor
 await check("emergency: planned with the doctor free first, called in by that doctor", async () => {
   const b0 = await board();

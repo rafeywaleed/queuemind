@@ -11,6 +11,7 @@ const EXPECT: Record<string, string[]> = {
   "doctor-late": ["report_doctor_delay"],
   "chest-pain": ["register_walk_in"],
   "routine-walk-in": ["register_walk_in"],
+  "arrived-ill": ["check_in_patient", "raise_priority"],
   sweep: [],
   cancellation: ["cancel_visit"],
   "finish-follow-up": ["finish_consult|book_follow_up"],
@@ -36,7 +37,7 @@ for (const s of SCENARIOS) {
     if (e.type === "error") error = e.message;
   }
   const missing = (EXPECT[s.id] ?? []).filter((want) => !want.split("|").some((w) => tools.includes(w)));
-  const emergencyFirst = s.id !== "chest-pain" || /^\W*EMERGENCY/i.test(final.trim());
+  const emergencyFirst = !["chest-pain", "arrived-ill"].includes(s.id) || /^\W*EMERGENCY/i.test(final.trim());
   const ok = !error && final.length > 0 && missing.length === 0 && emergencyFirst;
   if (!ok) failures++;
   rows.push(

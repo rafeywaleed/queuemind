@@ -39,7 +39,13 @@ function userFiles(files: Record<string, unknown> | undefined) {
 }
 
 /** Events that must end in a specific action. Checked after the turn by code, not by the model. */
-const REQUIRED_ACTIONS: { when: RegExp; need: string[]; nudge: string }[] = [
+const REQUIRED_ACTIONS: { when: RegExp; unless?: RegExp; need: string[]; nudge: string }[] = [
+  {
+    when: /\b(arrived|arrives|is here|has come|walked in)\b/i,
+    unless: /\bDr\.?\s+\w+(\s+\w+)?\s+(has\s+)?(arrived|arrives|is here)\b/i,
+    need: ["check_in_patient", "register_walk_in"],
+    nudge: "The patient who arrived in the previous message is not checked in yet, so no doctor can see them. If they have a booking, check_in_patient now (find_patient if unsure); if not, register_walk_in. Then apply any priority change and reply in two lines.",
+  },
   {
     when: /\bwalk-?in\b/i,
     need: ["register_walk_in", "check_in_patient"],
@@ -111,8 +117,9 @@ export async function* runAgentTurn(threadId: string, message: string): AsyncGen
               const content = textOf(m.content);
               const failed = content.startsWith("ERROR") || m.status === "error";
               if (!failed) succeeded.add(m.name ?? toolNames.get(m.tool_call_id) ?? "tool");
-              if (!failed && /"priority":\s*"emergency"/.test(content)) {
-                const token = content.match(/"token":\s*"(#\d+)"/)?.[1] ?? "";
+              // A new emergency walk-in, or an existing patient raised to emergency.
+              if (!failed && /"priority":\s*"emergency"|"to":\s*"emergency"/.test(content)) {
+                const token = content.match(/"token":\s*"(#\d+)"/)?.[1] ?? content.match(/(#\d+) /)?.[1] ?? "";
                 const doctor = content.match(/"doctor":\s*"([^"]+)"/)?.[1] ?? "the doctor";
                 emergencyLine = `**EMERGENCY — ${token ? `${token} ` : ""}needs to be seen now.** Alert ${doctor} or a nurse immediately; for chest pain, breathing trouble or stroke signs, call emergency services.`;
               }
@@ -133,7 +140,7 @@ export async function* runAgentTurn(threadId: string, message: string): AsyncGen
 
     // Harness check after the turn: some events require an action, whatever the model decided.
     // If it skipped one (smaller fallback models sometimes answer without acting), nudge once.
-    const missed = REQUIRED_ACTIONS.find((r) => r.when.test(message) && !r.need.some((n) => succeeded.has(n)));
+    const missed = REQUIRED_ACTIONS.find((r) => r.when.test(message) && !r.unless?.test(message) && !r.need.some((n) => succeeded.has(n)));
     if (missed) {
       yield { type: "token", text: "" };
       yield* pass(`[HARNESS CHECK] ${missed.nudge}`);

@@ -63,7 +63,7 @@ Deploying is the same on Vercel: import the repo, Next.js preset, paste the env 
 | Command | What it checks |
 |---|---|
 | `npm test` | Unit tests: queue engine (ordering, grace, fairness, overruns, no-shows), follow-up fees, red flags, age → specialty rule |
-| `npm run test:e2e` | 49 end-to-end checks against a running app: API validation, the clinic clock, every staff action, agent guardrails, a concurrent call-in race, outbox approve/reject, Laya patient texts, doctor-leaves auto-reassign, autopilot invariants at 30× with 3 clients |
+| `npm run test:e2e` | 50 end-to-end checks against a running app: API validation, the clinic clock, every staff action, agent guardrails, a concurrent call-in race, outbox approve/reject, Laya patient texts, doctor-leaves auto-reassign, autopilot invariants at 30× with 3 clients |
 | `npm run test:agent` | Every demo scenario through the real agent: expected tools called, no tool errors, EMERGENCY first for red-flag walk-ins, nobody stranded afterwards (uses model quota) |
 | `npm run test:ui` | Every screen in a headless browser with the key controls clicked; fails on any console or page error |
 
