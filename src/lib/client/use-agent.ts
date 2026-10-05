@@ -75,8 +75,13 @@ function turnsFromHistory(messages: HistoryMessage[]): Turn[] {
   return turns;
 }
 
-export function useAgentSession(onActivity?: () => void) {
-  const [threadId, setThreadId] = useState<string>(() => readThread());
+/**
+ * `ephemeral`: every message starts a fresh thread. Used by the Lab and Simulation, where each
+ * event is independent; it stops patients from an earlier event leaking into the next one and
+ * keeps each turn's prompt small. The front desk keeps one continuous conversation.
+ */
+export function useAgentSession(onActivity?: () => void, opts: { ephemeral?: boolean } = {}) {
+  const [threadId, setThreadId] = useState<string>(() => (opts.ephemeral ? newThreadId() : readThread()));
   const [turns, setTurns] = useState<Turn[]>([]);
   const [running, setRunning] = useState(false);
   const abort = useRef<AbortController | null>(null);
@@ -87,6 +92,7 @@ export function useAgentSession(onActivity?: () => void) {
 
   // Rehydrate the thread from the server-side checkpointer.
   useEffect(() => {
+    if (opts.ephemeral) return;
     fetch(`/api/agent?threadId=${encodeURIComponent(threadId)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => data?.messages && setTurns(turnsFromHistory(data.messages)))
@@ -101,6 +107,7 @@ export function useAgentSession(onActivity?: () => void) {
     async (message: string) => {
       if (!threadId || running || !message.trim()) return;
       const turnId = `t${Date.now()}`;
+      const runThread = opts.ephemeral ? newThreadId() : threadId;
       setTurns((all) => [...all, { id: turnId, message, todos: [], steps: [], text: "", status: "running", startedAt: Date.now() }]);
       setRunning(true);
       abort.current = new AbortController();
@@ -135,7 +142,7 @@ export function useAgentSession(onActivity?: () => void) {
         }
       };
       try {
-        await streamAgent(threadId, message, onEvent, abort.current.signal);
+        await streamAgent(runThread, message, onEvent, abort.current.signal);
       } catch (err) {
         if ((err as Error).name !== "AbortError") onEvent({ type: "error", message: (err as Error).message });
       } finally {
@@ -144,21 +151,23 @@ export function useAgentSession(onActivity?: () => void) {
         activity.current?.();
       }
     },
-    [threadId, running],
+    [threadId, running, opts.ephemeral],
   );
 
   const reset = useCallback(() => {
     abort.current?.abort();
     const id = newThreadId();
-    try {
-      localStorage.setItem(THREAD_KEY, id);
-    } catch {
-      // storage unavailable
+    if (!opts.ephemeral) {
+      try {
+        localStorage.setItem(THREAD_KEY, id);
+      } catch {
+        // storage unavailable
+      }
     }
     setThreadId(id);
     setTurns([]);
     setRunning(false);
-  }, []);
+  }, [opts.ephemeral]);
 
   return { threadId, turns, running, send, reset };
 }

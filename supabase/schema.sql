@@ -163,3 +163,23 @@ create table if not exists model_cooldowns (
   reason text
 );
 alter table model_cooldowns enable row level security;
+
+-- Inbound patient messages (SMS replies). Laya classifies intent; code acts when it is confident.
+create table if not exists patient_messages (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  patient_id uuid references patients(id) on delete cascade,
+  visit_id uuid references visits(id) on delete cascade,
+  body text not null,
+  intent text,
+  confidence real,
+  decided_by text,
+  outcome text,
+  created_at timestamptz not null default now()
+);
+alter table patient_messages enable row level security;
+drop policy if exists "public read" on patient_messages;
+create policy "public read" on patient_messages for select using (true);
+do $$ begin
+  begin alter publication supabase_realtime add table patient_messages; exception when duplicate_object then null; end;
+end $$;

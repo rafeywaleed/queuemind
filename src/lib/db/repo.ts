@@ -241,6 +241,8 @@ export async function insertNotification(n: {
   body: string;
   sendAt?: string | null;
   draftedBy: string;
+  /** "sent" for factual template replies that go out immediately (no model wrote them). */
+  status?: "pending_approval" | "sent";
   clinicId?: string;
 }) {
   return must(
@@ -254,6 +256,8 @@ export async function insertNotification(n: {
         body: n.body,
         send_at: n.sendAt ?? null,
         drafted_by: n.draftedBy,
+        status: n.status ?? "pending_approval",
+        decided_at: n.status === "sent" ? new Date().toISOString() : null,
       })
       .select("*")
       .single(),

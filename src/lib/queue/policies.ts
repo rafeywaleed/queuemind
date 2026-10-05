@@ -42,7 +42,7 @@ const RED_FLAGS: { level: Priority; label: string; patterns: RegExp[] }[] = [
   {
     level: "emergency",
     label: "possible cardiac event",
-    patterns: [/chest (pain|tightness|pressure)/i, /heart attack/i, /pain.*(left arm|jaw)/i, /seene (mein|me) dard/i],
+    patterns: [/chest (pain|tightness|pressure)/i, /chest (feels |is |getting )?(tight|heavy)/i, /heart attack/i, /pain.*(left arm|jaw)/i, /seene (mein|me) dard/i],
   },
   {
     level: "emergency",

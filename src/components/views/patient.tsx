@@ -1,14 +1,16 @@
 "use client";
 // What a patient sees on their phone: their place in line, an honest time, and the SMS the
 // clinic actually sent them (only approved messages, never drafts).
-import { useMemo } from "react";
-import { BellRing, Clock3, Lock, MapPin, MessageSquare, ShieldCheck, Signal, Wifi } from "lucide-react";
+import { useMemo, useState } from "react";
+import { BellRing, Clock3, Gauge, Lock, MapPin, MessageSquare, Send, ShieldCheck, Signal, Wifi } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { clock, KIND_LABEL, LANGUAGE_LABEL, minsBetween } from "@/lib/client/format";
-import type { ClinicData } from "@/lib/client/use-clinic";
-import type { BoardVisit } from "@/lib/client/types";
+import { postJson, type ClinicData } from "@/lib/client/use-clinic";
+import type { AgentSession } from "@/lib/client/use-agent";
+import type { BoardVisit, PatientMessageResult } from "@/lib/client/types";
 
-export function PatientView({ data, visitId, onVisit }: { data: ClinicData; visitId: string | null; onVisit: (id: string) => void }) {
+export function PatientView({ data, visitId, onVisit, agent }: { data: ClinicData; visitId: string | null; onVisit: (id: string) => void; agent: AgentSession }) {
   const board = data.board!;
   const tz = board.clinic.timezone;
   const choices = useMemo(
@@ -24,6 +26,28 @@ export function PatientView({ data, visitId, onVisit }: { data: ClinicData; visi
   const doctorPlan = board.snapshot.doctors.find((d) => d.doctorId === visit?.doctorId);
   const messages = data.notifications.filter((n) => n.patient_id === visit?.patientId && n.status === "sent").sort((a, b) => a.created_at.localeCompare(b.created_at));
   const drafts = data.notifications.filter((n) => n.patient_id === visit?.patientId && n.status === "pending_approval").length;
+  const inbound = data.patientMessages.filter((m) => m.patient_id === visit?.patientId);
+  const thread = [
+    ...messages.map((m) => ({ id: m.id, from: "clinic" as const, body: m.body, at: m.decided_at ?? m.created_at, note: m.drafted_by === "template (auto)" ? "instant reply" : null })),
+    ...inbound.map((m) => ({ id: m.id, from: "patient" as const, body: m.body, at: m.created_at, note: m.decided_by })),
+  ].sort((a, b) => a.at.localeCompare(b.at));
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const sendText = async (text: string) => {
+    if (!visit || !text.trim()) return;
+    setSending(true);
+    try {
+      const r = await postJson<PatientMessageResult>("/api/patient-messages", { visit: visit.token ? `#${visit.token}` : visit.id, text });
+      toast[r.handoff ? "info" : "success"](`${r.decidedBy}: ${r.outcome}`);
+      if (r.handoff && r.agentPrompt) void agent.send(r.agentPrompt);
+      setDraft("");
+      void data.refresh();
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setSending(false);
+    }
+  };
 
   if (!visit) return <div className="text-sm text-muted-foreground">No active patients.</div>;
 
@@ -68,18 +92,43 @@ export function PatientView({ data, visitId, onVisit }: { data: ClinicData; visi
 
               <div className="pt-2">
                 <div className="mb-2 flex items-center gap-1.5 px-1 text-[11px] font-semibold text-muted-foreground">
-                  <MessageSquare className="size-3.5" /> Messages from the clinic
+                  <MessageSquare className="size-3.5" /> Messages with the clinic
                 </div>
                 <div className="space-y-2">
-                  {messages.length === 0 && <div className="rounded-2xl bg-muted px-3 py-3 text-center text-xs text-muted-foreground">No messages yet. You&apos;ll get an SMS if your time changes.</div>}
-                  {messages.map((m) => (
-                    <div key={m.id} className="qm-in max-w-[88%] rounded-2xl rounded-bl-md bg-muted px-3 py-2 text-[13px] leading-snug">
+                  {thread.length === 0 && <div className="rounded-2xl bg-muted px-3 py-3 text-center text-xs text-muted-foreground">No messages yet. You&apos;ll get an SMS if your time changes. You can text the clinic below.</div>}
+                  {thread.map((m) => (
+                    <div key={m.id} className={cn("qm-in max-w-[88%] px-3 py-2 text-[13px] leading-snug", m.from === "patient" ? "ml-auto rounded-2xl rounded-br-md bg-primary text-primary-foreground" : "rounded-2xl rounded-bl-md bg-muted")}>
                       {m.body}
-                      <div className="mt-1 text-right text-[10px] text-muted-foreground">{clock(m.decided_at ?? m.created_at, tz)}</div>
+                      <div className={cn("mt-1 flex items-center justify-end gap-1 text-[10px]", m.from === "patient" ? "text-primary-foreground/75" : "text-muted-foreground")}>
+                        {m.note && m.from === "patient" && <Gauge className="size-3" />}
+                        {m.note && <span className="truncate">{m.note} ·</span>}
+                        {clock(m.at, tz)}
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
+            </div>
+            <div className="border-t px-3 pt-2 pb-1">
+              <div className="mb-1.5 flex gap-1 overflow-x-auto">
+                {["On my way", "Running 15 min late", "How long is the wait?", "Please cancel"].map((q) => (
+                  <button key={q} type="button" disabled={sending} onClick={() => void sendText(q)} className="shrink-0 rounded-full border px-2 py-0.5 text-[11px] transition-colors duration-150 hover:border-primary disabled:opacity-40">
+                    {q}
+                  </button>
+                ))}
+              </div>
+              <form
+                className="flex items-center gap-1.5"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void sendText(draft);
+                }}
+              >
+                <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Text the clinic…" className="min-w-0 flex-1 rounded-full border bg-background px-3 py-1.5 text-[13px] outline-none focus:ring-2 focus:ring-ring/40" />
+                <button type="submit" disabled={sending || !draft.trim()} className="grid size-8 place-items-center rounded-full bg-primary text-primary-foreground disabled:opacity-40" aria-label="Send">
+                  <Send className="size-3.5" />
+                </button>
+              </form>
             </div>
             <div className="mx-auto mb-2 h-1 w-28 rounded-full bg-foreground/80" />
           </div>

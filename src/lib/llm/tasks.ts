@@ -108,7 +108,22 @@ export interface TriageResult extends IntakeResult {
  * on both specialty and urgency, its answer stands. Otherwise the LLM fast lane decides. Either way
  * Laya's emergency probability can only raise urgency (safety ratchet).
  */
-export async function triageWalkIn(complaint: string, specialties: string[]): Promise<TriageResult> {
+/**
+ * Who should see this patient is a rule, not a guess: children go to Pediatrics, adults never do.
+ * Returns null when the complaint gives no age signal (then Laya / the LLM decide).
+ */
+export function specialtyByAge(complaint: string, age: number | null | undefined, specialties: string[]): string | null {
+  const peds = specialties.find((s) => /pediatric/i.test(s));
+  const adult = specialties.find((s) => !/pediatric/i.test(s));
+  const statedAge = age ?? Number(complaint.match(/\b(\d{1,2})\s*(?:years?|yrs?|y\/o|yo)\b/i)?.[1] ?? NaN);
+  const childWords = /\b(child|baby|infant|newborn|toddler|kid|my son|my daughter|(?:his|her) (?:son|daughter))\b|\(child\)/i.test(complaint);
+  if (!Number.isNaN(statedAge) && statedAge >= 0) return statedAge < 16 ? peds ?? adult ?? null : adult ?? null;
+  if (childWords) return peds ?? adult ?? null;
+  return null;
+}
+
+export async function triageWalkIn(complaint: string, specialties: string[], age?: number | null): Promise<TriageResult> {
+  const ruled = specialtyByAge(complaint, age, specialties);
   const laya = await decide("intake_triage", complaint, {
     specialty: {
       type: "choice",
@@ -138,7 +153,7 @@ export async function triageWalkIn(complaint: string, specialties: string[]): Pr
   if (confident) {
     const urgency = URGENCY_TO_PRIORITY[urg!.value] ?? "normal";
     return {
-      specialty: spec!.value,
+      specialty: ruled ?? spec!.value,
       estMinutes: null,
       urgency: urgency === "emergency" || layaEmergency === "emergency" ? "emergency" : urgency,
       summary: complaint.slice(0, 120),
@@ -151,5 +166,5 @@ export async function triageWalkIn(complaint: string, specialties: string[]): Pr
   const llm = await classifyIntake(complaint, specialties);
   const rank: Record<Priority, number> = { emergency: 0, urgent: 1, normal: 2 };
   const urgency = rank[layaEmergency] < rank[llm.urgency] ? layaEmergency : llm.urgency;
-  return { ...llm, urgency, decidedBy: llm.servedBy === "fallback" ? "fallback" : "llm", laya: layaInfo };
+  return { ...llm, specialty: ruled ?? llm.specialty, urgency, decidedBy: llm.servedBy === "fallback" ? "fallback" : "llm", laya: layaInfo };
 }

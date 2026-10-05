@@ -8,9 +8,10 @@ import type { ClinicState, Priority } from "../queue/types";
 import * as repo from "../db/repo";
 import { db } from "../db/client";
 import { draftPatientMessage, triageWalkIn, type MessagePurpose } from "../llm/tasks";
+import { decide } from "../llm/decision";
 import { findDoctorByRef, findVisitByRef, fmtDate, fmtTime, greetingName, renderBoard, renderImpact, visitRef } from "./format";
 
-export type Actor = "agent" | "staff" | "system";
+export type Actor = "agent" | "staff" | "system" | "patient";
 
 export class ClinicError extends Error {}
 
@@ -75,7 +76,7 @@ export async function checkIn(ref: string, actor: Actor) {
 }
 
 export async function registerWalkIn(
-  input: { patientName: string; phone?: string | null; language?: string | null; complaint: string; preferredDoctor?: string | null },
+  input: { patientName: string; phone?: string | null; language?: string | null; complaint: string; age?: number | null; preferredDoctor?: string | null },
   actor: Actor,
 ) {
   return withImpact(async (state) => {
@@ -83,7 +84,7 @@ export async function registerWalkIn(
     //    when Laya isn't confident. Take the most severe — automation never lowers priority.
     const redFlags = screenRedFlags(input.complaint);
     const specialties = [...new Set(state.doctors.filter((d) => d.status === "on_duty").map((d) => d.specialty))];
-    const intake = await triageWalkIn(input.complaint, specialties.length ? specialties : ["General Medicine"]);
+    const intake = await triageWalkIn(input.complaint, specialties.length ? specialties : ["General Medicine"], input.age);
     const priority = maxPriority(redFlags.level, intake.urgency);
 
     // 2. Pick the doctor where this patient would be seen soonest (what-if per candidate doctor).
@@ -428,4 +429,152 @@ export async function decideNotification(id: string, decision: "sent" | "rejecte
   if (!row) throw new ClinicError("Notification not found or already decided.");
   await repo.logEvent({ type: `notification_${decision}`, actor: "staff", summary: `SMS ${decision === "sent" ? "approved & sent" : "rejected"}`, visitId: row.visit_id, payload: { notificationId: id } });
   return row;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Patient messages (SMS replies). Laya, the decision model, reads intent in milliseconds; when it
+// is confident, code acts and answers with facts from the engine. Anything uncertain, medical or
+// unusual goes to the agent and a human. Red-flag words always escalate.
+// ---------------------------------------------------------------------------------------------
+
+const PATIENT_INTENTS = {
+  on_my_way: "confirms they are coming, on the way, or will be there",
+  running_late: "says they will be late or are delayed",
+  cancel: "wants to cancel the visit or will not come",
+  wait_time: "asks how long the wait is, when their turn is, or whether the doctor is late",
+  medical_concern: "describes symptoms, pain, a worsening condition, or asks for medical advice",
+  other: "anything else: billing, directions, rescheduling to another day, complaints",
+} as const;
+type PatientIntent = keyof typeof PATIENT_INTENTS;
+// Low-risk intents Laya may act on alone: a wrong guess costs one factual SMS. Cancel is destructive,
+// so Laya's read goes to the agent, which performs the cancellation with its tool.
+// Threshold from measured runs on this checkpoint: correct intents scored 0.35–0.59 (its confidence
+// is on a lower scale; laya-serve warns the checkpoint's temperatures are uncalibrated).
+const AUTO_INTENTS = new Set<PatientIntent>(["on_my_way", "running_late", "wait_time"]);
+const INTENT_CONFIDENCE = Number(process.env.PATIENT_INTENT_CONFIDENCE ?? 0.5);
+
+function replyTemplate(intent: PatientIntent, lang: string, f: { name: string; clinic: string; eta?: string; wait?: number; position?: number; grace: number }) {
+  const ur = lang === "ur";
+  switch (intent) {
+    case "on_my_way":
+      return ur ? `Shukriya ${f.name}, hum aapka intezaar kar rahe hain. — ${f.clinic}` : `Thanks ${f.name}, see you soon. — ${f.clinic}`;
+    case "running_late":
+      return ur
+        ? `Shukriya ${f.name}. Agar aap apne waqt se ${f.grace} minute se zyada late aayein, to aapko aane ki tarteeb se dekha jayega. — ${f.clinic}`
+        : `Thanks for letting us know, ${f.name}. If you arrive more than ${f.grace} min after your slot, you'll be seen in arrival order. — ${f.clinic}`;
+    case "cancel":
+      return ur ? `${f.name}, aapki visit cancel kar di gayi hai. Dobara booking ke liye reply karein. — ${f.clinic}` : `${f.name}, your visit is cancelled. Reply any time to rebook. — ${f.clinic}`;
+    case "wait_time":
+      if (!f.eta) {
+        return ur ? `${f.name}, aapki visit abhi line mein nahi hai. Front desk aapko call karega. — ${f.clinic}` : `${f.name}, your visit isn't in today's line yet. The front desk will call you. — ${f.clinic}`;
+      }
+      return ur
+        ? `${f.name}, aap line mein ${f.position} number par hain, andaazan ${f.eta} tak (taqreeban ${f.wait} minute). — ${f.clinic}`
+        : `${f.name}, you're number ${f.position} in line, expected around ${f.eta} (about ${f.wait} min). — ${f.clinic}`;
+    default:
+      return "";
+  }
+}
+
+export async function handlePatientMessage(ref: string, text: string) {
+  const { state, snapshot } = await stateAndBoard();
+  const v = needVisit(state, ref);
+  const body = text.trim().slice(0, 500);
+  const redFlags = screenRedFlags(body);
+  const laya = await decide("patient_message", body, {
+    intent: { type: "choice", instructions: "What does the patient want with this message to the clinic?", criteria: { ...PATIENT_INTENTS } },
+    needs_human: { type: "noul", instructions: "Does this message need a person at the clinic to read it: a medical worry, a complaint, or anything unusual?" },
+  });
+  const intent = laya?.answers.intent;
+  const needsHuman = laya?.answers.needs_human?.confidence ?? 0;
+  const confidence = intent?.confidence ?? 0;
+  const intentKey = intent?.value as PatientIntent | undefined;
+  const auto = !!intentKey && AUTO_INTENTS.has(intentKey) && confidence >= INTENT_CONFIDENCE && needsHuman < 0.7 && redFlags.level === "normal";
+
+  let decidedBy: string;
+  let outcome: string;
+  let reply: string | null = null;
+  let impact: string[] = [];
+  const name = greetingName(v.patientName);
+  const tz = state.clinic.timezone;
+
+  if (redFlags.level !== "normal") {
+    decidedBy = "red-flag rules";
+    outcome = `Red-flag words (${redFlags.matches.join(", ")}): escalated to the agent and front desk`;
+  } else if (!auto) {
+    decidedBy = laya ? `Laya → agent (${intentKey ?? "?"} ${confidence.toFixed(2)}${needsHuman >= 0.7 ? ", needs a human" : ""})` : "agent (Laya offline)";
+    outcome = "Handed to the agent";
+  } else {
+    decidedBy = `Laya (${intentKey} ${confidence.toFixed(2)})`;
+    const planned = findInSnapshot(snapshot, v.id)?.planned;
+    if (intentKey === "on_my_way") {
+      outcome = "Confirmed they're coming; slot kept";
+    } else if (intentKey === "running_late") {
+      outcome = `Noted: running late (grace ${state.clinic.graceMinutes} min applies on arrival)`;
+    } else if (intentKey === "cancel") {
+      if (["scheduled", "waiting"].includes(v.status)) {
+        const res = await cancelVisit(visitRef(v), "Patient cancelled by SMS", "patient");
+        impact = res.impact;
+        outcome = `Visit cancelled; ${impact.length} patient(s) affected`;
+      } else {
+        outcome = `Nothing to cancel (visit is ${v.status})`;
+      }
+    } else {
+      outcome = planned ? `Answered with the live wait: position ${planned.position}, ~${fmtTime(planned.etaStart, tz)}` : "Answered: not in today's line";
+    }
+    reply = replyTemplate(intentKey!, v.patientLanguage, {
+      name,
+      clinic: state.clinic.name,
+      grace: state.clinic.graceMinutes,
+      eta: planned ? fmtTime(planned.etaStart, tz) : undefined,
+      wait: planned?.waitMin,
+      position: planned?.position,
+    });
+    // Factual template filled with engine numbers only: safe to send without review.
+    await repo.insertNotification({ visitId: v.id, patientId: v.patientId, kind: `reply_${intentKey}`, body: reply, draftedBy: "template (auto)", status: "sent" });
+  }
+
+  const handoff = !auto;
+  await db().from("patient_messages").insert({
+    clinic_id: state.clinic.id,
+    patient_id: v.patientId,
+    visit_id: v.id,
+    body,
+    intent: intentKey ?? null,
+    confidence: intent ? confidence : null,
+    decided_by: decidedBy,
+    outcome,
+  });
+  await repo.logEvent({
+    type: "patient_message",
+    actor: "patient",
+    summary: `${v.patientName} texted: "${body.slice(0, 80)}" → ${outcome}`,
+    visitId: v.id,
+    doctorId: v.doctorId,
+    payload: { intent: intentKey, confidence, needsHuman, decidedBy, laya: laya?.answers ?? null },
+  });
+
+  const layaRead = laya ? `Laya read it as "${intentKey}" (${confidence.toFixed(2)}), needs-a-human ${needsHuman.toFixed(2)}.` : "The decision model is offline.";
+  const flags = redFlags.level !== "normal" ? ` Red flags: ${redFlags.matches.join(", ")}.` : "";
+  return {
+    visit: visitRef(v),
+    patient: v.patientName,
+    intent: intentKey ?? null,
+    confidence,
+    needsHuman,
+    decidedBy,
+    outcome,
+    reply,
+    impact,
+    handoff,
+    laya: laya ? { latencyMs: laya.latencyMs, model: laya.model } : null,
+    agentPrompt: handoff
+      ? `[PATIENT MESSAGE] ${visitRef(v)} ${v.patientName} texted the clinic: "${body}". ${layaRead}${flags} Decide what to do: act with tools if needed, and draft a reply for staff approval. Never give medical advice in SMS.`
+      : null,
+  };
+}
+
+export async function listPatientMessages(limit = 100) {
+  const { data } = await db().from("patient_messages").select("*").order("created_at", { ascending: false }).limit(limit);
+  return data ?? [];
 }

@@ -10,6 +10,8 @@ const FRESH_MS = 90_000;
 let cache: { at: number; endpoint: { url: string; model: string; lastSeenAt: string } | null } | null = null;
 
 export async function decisionEndpoint() {
+  // Local development: point straight at a laya-serve on this machine (no tunnel, no heartbeat).
+  if (process.env.LAYA_URL) return { url: process.env.LAYA_URL, model: "laya (local)", lastSeenAt: new Date().toISOString() };
   if (cache && Date.now() - cache.at < 15_000) return cache.endpoint;
   let endpoint = null;
   try {

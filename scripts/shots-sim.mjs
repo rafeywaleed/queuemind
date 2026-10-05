@@ -1,0 +1,22 @@
+// Drive the Simulation screen with one free-text event; capture mid-run and finished (dev-only).
+import { chromium } from "playwright";
+const out = process.argv[2];
+const text = process.argv[3] ?? "Walk-in: Amir, 45, feeling dizzy and lightheaded since this morning";
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+await page.goto("http://localhost:3000");
+await page.evaluate(() => { localStorage.setItem("queuemind.persona", "sim"); localStorage.setItem("queuemind.intro-seen", "1"); });
+await page.reload();
+const input = page.getByPlaceholder("e.g. Walk-in: Amir, 45, feeling dizzy");
+await input.waitFor({ timeout: 90000 });
+await page.waitForTimeout(2000);
+await input.fill(text);
+await input.press("Enter");
+await page.waitForFunction(() => document.querySelectorAll(".animate-spin").length > 0 && /Decides|Reads/.test(document.body.innerText), null, { timeout: 60000 }).catch(() => {});
+await page.waitForTimeout(2500);
+await page.screenshot({ path: `${out}/sim-running.png` });
+await page.waitForFunction(() => /Every screen updates|Failed/.test(document.body.innerText), null, { timeout: 280000 }).catch(() => {});
+await page.waitForTimeout(3000);
+await page.screenshot({ path: `${out}/sim-done.png`, fullPage: true });
+await browser.close();
+console.log("ok");

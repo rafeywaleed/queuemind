@@ -3,7 +3,7 @@
 // Supabase Realtime pushes row changes; we debounce and refetch the computed board.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
-import type { AgentEvent, Board, ClinicEvent, Notification, RouterStatus, Scenario } from "./types";
+import type { AgentEvent, Board, ClinicEvent, Notification, PatientMessage, RouterStatus, Scenario } from "./types";
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { cache: "no-store" });
@@ -27,6 +27,7 @@ const supabase =
 export interface ClinicData {
   board: Board | null;
   notifications: Notification[];
+  patientMessages: PatientMessage[];
   events: ClinicEvent[];
   status: RouterStatus | null;
   scenarios: Scenario[];
@@ -40,6 +41,7 @@ export interface ClinicData {
 export function useClinic(): ClinicData {
   const [board, setBoard] = useState<Board | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [patientMessages, setPatientMessages] = useState<PatientMessage[]>([]);
   const [events, setEvents] = useState<ClinicEvent[]>([]);
   const [status, setStatus] = useState<RouterStatus | null>(null);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
@@ -50,13 +52,15 @@ export function useClinic(): ClinicData {
 
   const refresh = useCallback(async () => {
     try {
-      const [b, n, e] = await Promise.all([
+      const [b, n, e, pm] = await Promise.all([
         getJson<Board>("/api/board"),
         getJson<Notification[]>("/api/notifications"),
         getJson<ClinicEvent[]>("/api/events?limit=80"),
+        getJson<PatientMessage[]>("/api/patient-messages").catch(() => []),
       ]);
       setBoard(b);
       setNotifications(n);
+      setPatientMessages(pm);
       setEvents(e);
       setError(null);
       setLastUpdated(Date.now());
@@ -90,7 +94,7 @@ export function useClinic(): ClinicData {
     let channel: ReturnType<NonNullable<typeof supabase>["channel"]> | null = null;
     if (supabase) {
       channel = supabase.channel("clinic-live");
-      for (const table of ["visits", "doctors", "notifications", "events"]) {
+      for (const table of ["visits", "doctors", "notifications", "events", "patient_messages"]) {
         channel.on("postgres_changes", { event: "*", schema: "public", table }, scheduleRefresh);
       }
       channel.subscribe((s) => setLive(s === "SUBSCRIBED"));
@@ -102,7 +106,7 @@ export function useClinic(): ClinicData {
     };
   }, [refresh, refreshStatus, scheduleRefresh]);
 
-  return { board, notifications, events, status, scenarios, error, live, lastUpdated, refresh, refreshStatus };
+  return { board, notifications, patientMessages, events, status, scenarios, error, live, lastUpdated, refresh, refreshStatus };
 }
 
 /** Stream one agent turn; calls onEvent for each NDJSON event. */

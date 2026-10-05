@@ -46,9 +46,9 @@ export const checkInPatient = tool(wrap(({ visit }: { visit: string }) => clinic
 });
 
 export const registerWalkIn = tool(
-  wrap((a: { patient_name: string; phone?: string; language?: string; complaint: string; preferred_doctor?: string }) =>
+  wrap((a: { patient_name: string; phone?: string; language?: string; complaint: string; age?: number; preferred_doctor?: string }) =>
     clinic.registerWalkIn(
-      { patientName: a.patient_name, phone: a.phone, language: a.language, complaint: a.complaint, preferredDoctor: a.preferred_doctor },
+      { patientName: a.patient_name, phone: a.phone, language: a.language, complaint: a.complaint, age: a.age, preferredDoctor: a.preferred_doctor },
       AGENT,
     ),
   ),
@@ -57,7 +57,8 @@ export const registerWalkIn = tool(
     description:
       "Register a walk-in patient. Runs red-flag rules + intake model on the complaint (most severe wins), picks the doctor with the shortest projected wait, issues a token.",
     schema: z.object({
-      patient_name: z.string(),
+      patient_name: z.string().describe("Exactly as written in the CURRENT message. Never reuse a name from earlier messages."),
+      age: z.number().int().min(0).max(120).optional().describe("Age in years if stated. Under 16 goes to Pediatrics, adults never do."),
       phone: z.string().optional(),
       language: z.string().optional().describe('ISO code: "en", "ur" (Roman Urdu), "ar", ...'),
       complaint: z.string().describe("The patient's reason for visit, in their own words"),

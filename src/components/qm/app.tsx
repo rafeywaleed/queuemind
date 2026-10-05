@@ -1,7 +1,7 @@
 "use client";
 // QueueMind shell: one live clinic, five ways to look at it.
 import { useState } from "react";
-import { BarChart3, ConciergeBell, FlaskConical, HelpCircle, Loader2, MonitorPlay, Network, RotateCcw, Smartphone, Stethoscope } from "lucide-react";
+import { BarChart3, ConciergeBell, FlaskConical, Gamepad2, HelpCircle, Loader2, MonitorPlay, Network, RotateCcw, Smartphone, Stethoscope } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -13,14 +13,17 @@ import { TvView } from "@/components/views/tv";
 import { ManagerView } from "@/components/views/manager";
 import { LabView } from "@/components/views/lab";
 import { HowItWorksView } from "@/components/views/how-it-works";
+import { SimulationView } from "@/components/views/simulation";
+import { LayaBanner } from "@/components/qm/laya-status";
 import { cn } from "@/lib/utils";
 import { clock } from "@/lib/client/format";
 import { postJson, useClinic } from "@/lib/client/use-clinic";
 import { useAgentSession } from "@/lib/client/use-agent";
 
-type Persona = "lab" | "how" | "desk" | "doctor" | "patient" | "tv" | "manager";
+type Persona = "sim" | "lab" | "how" | "desk" | "doctor" | "patient" | "tv" | "manager";
 
 const PERSONAS: { id: Persona; label: string; who: string; icon: typeof ConciergeBell; group: "main" | "role" }[] = [
+  { id: "sim", label: "Simulation", who: "The clinic as a game: make something happen and watch every step", icon: Gamepad2, group: "main" },
   { id: "lab", label: "Live Lab", who: "Make something happen, watch the harness route it, see the clinic change", icon: FlaskConical, group: "main" },
   { id: "how", label: "How it works", who: "The full agent harness: graph, specs, middleware, models, guardrails, tools", icon: Network, group: "main" },
   { id: "desk", label: "Front desk", who: "Amna, receptionist: runs the counter with the agent", icon: ConciergeBell, group: "role" },
@@ -44,9 +47,11 @@ function readStorage(key: string): string | null {
 export function QueueMindApp() {
   const data = useClinic();
   const agent = useAgentSession(() => void data.refresh());
+  // Lab + Simulation: each event runs in a fresh thread so earlier patients never leak in.
+  const eventAgent = useAgentSession(() => void data.refresh(), { ephemeral: true });
   const [persona, setPersona] = useState<Persona>(() => {
     const saved = readStorage(PERSONA_KEY) as Persona | null;
-    return saved && PERSONAS.some((p) => p.id === saved) ? saved : "lab";
+    return saved && PERSONAS.some((p) => p.id === saved) ? saved : "sim";
   });
   const [doctorId, setDoctorId] = useState<string | null>(null);
   const [patientVisit, setPatientVisit] = useState<string | null>(null);
@@ -76,6 +81,7 @@ export function QueueMindApp() {
     try {
       await postJson("/api/demo", {});
       agent.reset();
+      eventAgent.reset();
       await data.refresh();
       toast.success("Fresh afternoon shift loaded");
     } catch (err) {
@@ -141,12 +147,16 @@ export function QueueMindApp() {
           </div>
         )}
 
+        {persona !== "sim" && <LayaBanner status={data.status} onRefresh={data.refreshStatus} />}
+
         {!data.board ? (
           <div className="grid h-[60vh] place-items-center text-sm text-muted-foreground">
             {data.error ? <span className="text-qm-emergency">{data.error}</span> : <Loader2 className="size-5 animate-spin" />}
           </div>
+        ) : persona === "sim" ? (
+          <SimulationView data={data} agent={eventAgent} />
         ) : persona === "lab" ? (
-          <LabView data={data} agent={agent} />
+          <LabView data={data} agent={eventAgent} />
         ) : persona === "how" ? (
           <HowItWorksView data={data} />
         ) : persona === "desk" ? (
@@ -154,7 +164,7 @@ export function QueueMindApp() {
         ) : persona === "doctor" ? (
           <DoctorView data={data} doctorId={doctorId ?? data.board.doctors[0].id} onDoctor={setDoctorId} />
         ) : persona === "patient" ? (
-          <PatientView data={data} visitId={patientVisit} onVisit={setPatientVisit} />
+          <PatientView data={data} visitId={patientVisit} onVisit={setPatientVisit} agent={eventAgent} />
         ) : persona === "tv" ? (
           <TvView data={data} />
         ) : (
@@ -196,8 +206,8 @@ function Logo() {
 
 function IntroDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const steps = [
-    ["Start in the Live Lab", "A 3-doctor clinic mid-shift: one consult running over, a likely no-show, patients slipping behind. Reset demo any time for a fresh shift."],
-    ["Make something happen", "Click an event (doctor called away, chest-pain walk-in, doctor leaves). Watch every function call light up the harness graph, and the patients move on the clinic floor."],
+    ["Start in the Simulation", "A 3-doctor clinic mid-shift: one consult running over, a likely no-show, patients slipping behind. Reset demo any time for a fresh shift."],
+    ["Make something happen", "Ask the agent (doctor called away, chest-pain walk-in), send a patient text that Laya reads in milliseconds, or press a staff button. Patients walk on the floor; the flow line shows every step. Live Lab shows the full harness graph."],
     ["See it from every side", "Under 'View as': the front desk, the doctor, a patient's phone, the lobby TV and the manager all update live."],
     ["Humans stay in charge", "SMS wait in the outbox for approval. The agent can raise priority but never lower it. All times and fees come from tested code, not the model. 'How it works' shows the whole harness."],
   ];

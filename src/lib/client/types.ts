@@ -38,6 +38,33 @@ export interface ClinicEvent {
   created_at: string;
 }
 
+export interface PatientMessage {
+  id: string;
+  patient_id: string | null;
+  visit_id: string | null;
+  body: string;
+  intent: string | null;
+  confidence: number | null;
+  decided_by: string | null;
+  outcome: string | null;
+  created_at: string;
+}
+
+export interface PatientMessageResult {
+  visit: string;
+  patient: string;
+  intent: string | null;
+  confidence: number;
+  needsHuman: number;
+  decidedBy: string;
+  outcome: string;
+  reply: string | null;
+  impact: string[];
+  handoff: boolean;
+  laya: { latencyMs: number; model: string } | null;
+  agentPrompt: string | null;
+}
+
 export interface PoolMemberStatus {
   member: string;
   usedToday: number;
