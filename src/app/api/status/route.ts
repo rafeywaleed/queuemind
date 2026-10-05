@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 export async function GET() {
   try {
     const [router, pool] = await Promise.all([routerStatus(), poolStatus()]);
-    return json({ ...router, reasoningPool: pool });
+    return json({ ...router, reasoningPool: pool, build: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "local" });
   } catch (err) {
     return fail(err);
   }
