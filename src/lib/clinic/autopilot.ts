@@ -7,8 +7,11 @@ import * as repo from "../db/repo";
 import { claimTick, releaseTick, simNow } from "./clock";
 import { checkIn, doctorAvailable, finishConsult, markNoShow, startConsult } from "./actions";
 import { visitRef } from "./format";
+import { resetDemo } from "./seed";
 
 const TICK_GAP_MS = 2_500;
+/** Idle this long (real time) and the next visitor starts a fresh demo day. */
+const STALE_DEMO_MS = 45 * 60_000;
 const ARRIVAL_WINDOW_MIN = 2;
 const WALK_IN_EVERY_MIN = Number(process.env.SIM_WALKIN_MINUTES ?? 9);
 const MIN = 60_000;
@@ -43,9 +46,15 @@ function arrivalFor(visitId: string, scheduled: number): number | null {
 const first = (name: string) => name.replace(/\(child\)/i, "").trim().split(" ")[0];
 
 export async function maybeTick(): Promise<string[]> {
-  const { claimed, clock } = await claimTick(TICK_GAP_MS);
+  const { claimed, clock, idleMs } = await claimTick(TICK_GAP_MS);
   if (!claimed) return [];
   try {
+    // Nobody has watched the clinic for a while: whoever opens it next gets a fresh morning shift,
+    // not a finished day with an empty waiting room.
+    if (idleMs !== null && idleMs > STALE_DEMO_MS) {
+      await resetDemo();
+      return ["Fresh shift: the demo was idle, so the clinic day restarted"];
+    }
     if (clock.paused) return [];
     return await runTick(clock);
   } finally {

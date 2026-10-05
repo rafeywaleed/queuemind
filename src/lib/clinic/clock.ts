@@ -72,7 +72,7 @@ export async function controlClock(cmd: { action: "play" | "pause" | "speed" | "
  * the clinic for a while, freeze time across the gap so an idle night doesn't turn into a day of
  * overrun consults and no-shows.
  */
-export async function claimTick(minGapMs: number): Promise<{ claimed: boolean; clock: ClockState }> {
+export async function claimTick(minGapMs: number): Promise<{ claimed: boolean; clock: ClockState; idleMs: number | null }> {
   const { clock, lastTickReal } = await load(true);
   const real = Date.now();
   let current = clock;
@@ -89,7 +89,7 @@ export async function claimTick(minGapMs: number): Promise<{ claimed: boolean; c
     .or(`last_tick_real.is.null,last_tick_real.lt.${threshold}`)
     .select("id");
   if (cache) cache.lastTickReal = real;
-  return { claimed: !!data?.length, clock: current };
+  return { claimed: !!data?.length, clock: current, idleMs: lastTickReal ? real - lastTickReal : null };
 }
 
 /** End the tick: the next one may start after the normal gap. */
