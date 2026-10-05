@@ -182,7 +182,7 @@ function Floor({ board, tz }: { board: Board; tz: string }) {
                   off ? "bg-foreground text-background" : away ? "bg-qm-delay text-foreground" : current ? "bg-qm-consult text-white" : "bg-qm-good text-white",
                 )}
               >
-                {off ? "CLOSED" : away ? `BACK ${clock(d.freeAt, tz)}` : current ? "IN CONSULT" : "FREE"}
+                {off ? (current ? "LAST PATIENT" : "CLOSED") : away ? `BACK ${clock(d.freeAt, tz)}` : current ? "IN CONSULT" : "FREE"}
               </span>
             </div>
             {/* doctor at desk */}

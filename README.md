@@ -49,6 +49,15 @@ Fast lane (intake triage, SMS drafts): Colab Llama (self-hosted, if online) → 
 
 `npm test` runs the queue-engine and policy tests.
 
+## Testing
+
+| Command | What it checks |
+|---|---|
+| `npm test` | Unit tests: queue engine (ordering, grace, fairness, overruns, no-shows), follow-up fees, red flags, age → specialty rule |
+| `npm run test:e2e` | 47 end-to-end checks against a running app: API validation, clinic clock, every staff action, agent guardrails (can't lower priority, contact before no-show, no double registration), a concurrent call-in race, outbox approve/reject, Laya patient texts, doctor-leaves auto-reassign, autopilot invariants at 30× with 3 clients |
+| `npm run test:agent` | Every demo scenario through the real agent (fresh thread each): expected tools called, no tool errors, EMERGENCY first for red-flag walk-ins, no stranded patients afterwards (uses model quota) |
+| `npm run test:ui` | Opens every screen in a headless browser, clicks the key controls, fails on any console/page error |
+
 ## API
 
 | Method | Route | Purpose |

@@ -25,12 +25,15 @@ export function visitRef(v: Pick<Visit, "token" | "id">): string {
 
 export function findVisitByRef(state: ClinicState, ref: string): Visit | undefined {
   const r = ref.trim().replace(/^token\s*/i, "");
-  const num = r.replace(/^#/, "");
+  // Accept "#12", "12", "#12 Ali Raza" (models often add the name) or a visit id.
+  const num = r.match(/^#?(\d+)(?:\b|$)/)?.[1] ?? "";
   if (/^\d+$/.test(num)) {
     const active = new Set(["scheduled", "waiting", "in_consult"]);
     const matches = state.visits.filter((v) => v.token === Number(num));
-    return matches.find((v) => active.has(v.status)) ?? matches[0];
+    const hit = matches.find((v) => active.has(v.status)) ?? matches[0];
+    if (hit) return hit;
   }
+  // A visit id can also start with digits, so fall back to an exact id match.
   return state.visits.find((v) => v.id === r);
 }
 

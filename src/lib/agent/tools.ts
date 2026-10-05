@@ -41,7 +41,7 @@ export const findPatient = tool(
 
 export const checkInPatient = tool(wrap(({ visit }: { visit: string }) => clinic.checkIn(visit, AGENT)), {
   name: "check_in_patient",
-  description: "Mark a booked patient (appointment or follow-up) as arrived. Applies the grace-period rule: late beyond grace loses their slot and queues by arrival.",
+  description: "A BOOKED patient (appointment or follow-up) has arrived — use this, not register_walk_in, whenever the person has a booking (find_patient if unsure). Applies the grace-period rule.",
   schema: z.object({ visit: visitRef }),
 });
 
@@ -86,7 +86,7 @@ export const markDoctorOffDuty = tool(
   wrap(({ doctor, reason }: { doctor: string; reason: string }) => clinic.doctorOffDuty(doctor, reason, AGENT)),
   {
     name: "mark_doctor_off_duty",
-    description: "Doctor has left / will not see more patients today. Returns patients who now need reassignment.",
+    description: "Doctor has left / will not see more patients today. Their patients are moved automatically to the least-busy doctor of the same specialty; returns who moved (draft 'reassigned' SMS for them).",
     schema: z.object({ doctor: doctorRef, reason: z.string() }),
   },
 );

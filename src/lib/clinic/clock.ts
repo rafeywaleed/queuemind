@@ -15,6 +15,7 @@ export interface ClockState {
 
 export const DEFAULT_SPEED = Number(process.env.SIM_SPEED ?? 6);
 const IDLE_MS = 60_000;
+const LEASE_MS = 30_000;
 
 let cache: { at: number; clock: ClockState; lastTickReal: number | null } | null = null;
 
@@ -75,16 +76,25 @@ export async function claimTick(minGapMs: number): Promise<{ claimed: boolean; c
   const { clock, lastTickReal } = await load(true);
   const real = Date.now();
   let current = clock;
-  if (lastTickReal && real - lastTickReal > IDLE_MS && !clock.paused) {
+  if (lastTickReal && lastTickReal < real && real - lastTickReal > IDLE_MS && !clock.paused) {
     current = await saveClock({ ...clock, anchorSim: simNow(clock, lastTickReal), anchorReal: real });
   }
   const threshold = new Date(real - minGapMs).toISOString();
+  // The claim is a lease: last_tick_real is pushed into the future while the tick runs, so no other
+  // instance can start a tick until this one releases it (or the lease expires after a crash).
   const { data } = await db()
     .from("clinics")
-    .update({ last_tick_real: new Date(real).toISOString() })
+    .update({ last_tick_real: new Date(real + LEASE_MS).toISOString() })
     .eq("id", CLINIC_ID)
     .or(`last_tick_real.is.null,last_tick_real.lt.${threshold}`)
     .select("id");
   if (cache) cache.lastTickReal = real;
   return { claimed: !!data?.length, clock: current };
+}
+
+/** End the tick: the next one may start after the normal gap. */
+export async function releaseTick() {
+  const real = Date.now();
+  await db().from("clinics").update({ last_tick_real: new Date(real).toISOString() }).eq("id", CLINIC_ID);
+  if (cache) cache.lastTickReal = real;
 }

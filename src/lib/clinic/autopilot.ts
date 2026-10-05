@@ -4,7 +4,7 @@
 // Runs at most once per window across all server instances (claimTick is atomic).
 import { computeQueue } from "../queue/engine";
 import * as repo from "../db/repo";
-import { claimTick, simNow } from "./clock";
+import { claimTick, releaseTick, simNow } from "./clock";
 import { checkIn, doctorAvailable, finishConsult, markNoShow, startConsult } from "./actions";
 import { visitRef } from "./format";
 
@@ -44,7 +44,16 @@ const first = (name: string) => name.replace(/\(child\)/i, "").trim().split(" ")
 
 export async function maybeTick(): Promise<string[]> {
   const { claimed, clock } = await claimTick(TICK_GAP_MS);
-  if (!claimed || clock.paused) return [];
+  if (!claimed) return [];
+  try {
+    if (clock.paused) return [];
+    return await runTick(clock);
+  } finally {
+    await releaseTick();
+  }
+}
+
+async function runTick(clock: Awaited<ReturnType<typeof claimTick>>["clock"]): Promise<string[]> {
   const now = simNow(clock);
   const happened: string[] = [];
   let state = await repo.loadClinicState();
@@ -63,17 +72,18 @@ export async function maybeTick(): Promise<string[]> {
     const scheduled = new Date(v.scheduledAt).getTime();
     if (scheduled - now > 3 * 3_600_000) continue; // a future day
     const arrival = arrivalFor(v.id, scheduled);
-    if (arrival === null) {
-      if (now - scheduled > (state.clinic.noShowMinutes + 25) * MIN) {
-        await markNoShow(visitRef(v), "system").catch(() => undefined);
-        happened.push(`${visitRef(v)} ${first(v.patientName)} never came (no-show)`);
-      }
+    // Anyone this far past their slot without arriving is closed as a no-show (whatever their profile).
+    if (now - scheduled > (state.clinic.noShowMinutes + 25) * MIN) {
+      const closed = await markNoShow(visitRef(v), "system").then(() => true, () => false);
+      if (closed) happened.push(`${visitRef(v)} ${first(v.patientName)} never came (no-show)`);
       continue;
     }
+    if (arrival === null) continue;
     // Arrive only around the arrival moment: someone already long overdue (e.g. the seeded
     // no-show, or a gap while paused) stays missing and becomes a real no-show.
     if (now >= arrival && now - arrival <= ARRIVAL_WINDOW_MIN * MIN) {
-      await checkIn(visitRef(v), "system").catch(() => undefined);
+      const ok = await checkIn(visitRef(v), "system").then(() => true, () => false);
+      if (!ok) continue;
       const late = Math.round((arrival - scheduled) / MIN);
       happened.push(`${visitRef(v)} ${first(v.patientName)} arrived${late > state.clinic.graceMinutes ? ` ${late} min late` : ""}`);
     }
@@ -89,8 +99,8 @@ export async function maybeTick(): Promise<string[]> {
     const overrun = ((v as { notes?: string | null }).notes ?? "").includes("sim:overrun");
     const target = est * (overrun ? 2 : 0.8 + (hash(v.id) % 50) / 100);
     if ((now - new Date(v.consultStartedAt).getTime()) / MIN >= target) {
-      await finishConsult(visitRef(v), {}, "system").catch(() => undefined);
-      happened.push(`${doctor?.name ?? "Doctor"} finished with ${visitRef(v)} ${first(v.patientName)}`);
+      const ok = await finishConsult(visitRef(v), {}, "system").then(() => true, () => false);
+      if (ok) happened.push(`${doctor?.name ?? "Doctor"} finished with ${visitRef(v)} ${first(v.patientName)}`);
     }
   }
 
@@ -103,8 +113,8 @@ export async function maybeTick(): Promise<string[]> {
     if (d.status !== "on_duty" || d.current || !available) continue;
     const next = d.queue.find((q) => q.state === "waiting");
     if (next && new Date(next.etaStart).getTime() <= now + MIN) {
-      await startConsult(next.token ? `#${next.token}` : next.visitId, "system").catch(() => undefined);
-      happened.push(`${d.name} called ${next.token ? `#${next.token} ` : ""}${first(next.patientName)}`);
+      const ok = await startConsult(next.token ? `#${next.token}` : next.visitId, "system").then(() => true, () => false);
+      if (ok) happened.push(`${d.name} called ${next.token ? `#${next.token} ` : ""}${first(next.patientName)}`);
     }
   }
 

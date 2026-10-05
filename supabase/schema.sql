@@ -187,3 +187,6 @@ end $$;
 -- Simulated clinic clock shared by every server instance (speed, anchors, paused) + autopilot tick guard.
 alter table clinics add column if not exists clock jsonb;
 alter table clinics add column if not exists last_tick_real timestamptz;
+
+-- A doctor sees one patient at a time: concurrent "call in" races fail at the database.
+create unique index if not exists visits_one_consult_per_doctor on visits (doctor_id) where status = 'in_consult';

@@ -63,7 +63,8 @@ export async function checkIn(ref: string, actor: Actor) {
     if (v.status !== "scheduled") throw new ClinicError(`${v.patientName} is already ${v.status}.`);
     const now = await clinicNow();
     const token = v.token ?? (await repo.nextToken(state.clinic.timezone));
-    await repo.updateVisit(v.id, { status: "waiting", arrived_at: now.toISOString(), token });
+    const arrived = await repo.transitionVisit(v.id, ["scheduled"], { status: "waiting", arrived_at: now.toISOString(), token });
+    if (!arrived) throw new ClinicError(`${v.patientName} is already checked in.`);
     const lateBy = v.scheduledAt ? Math.round((now.getTime() - new Date(v.scheduledAt).getTime()) / 60_000) : 0;
     const keepsSlot = lateBy <= state.clinic.graceMinutes;
     const summary = v.scheduledAt
@@ -81,6 +82,18 @@ export async function registerWalkIn(
   actor: Actor,
 ) {
   return withImpact(async (state) => {
+    // 0. A patient who already has a booking today is checked in, not registered twice.
+    const norm = (n: string) => n.toLowerCase().replace(/\(child\)/, "").replace(/[^a-z ]/g, "").trim().split(/\s+/);
+    const wanted = norm(input.patientName);
+    const booked = state.visits.find((v) => {
+      if (v.status !== "scheduled") return false;
+      const have = norm(v.patientName);
+      return wanted.length > 1 ? wanted.join(" ") === have.join(" ") : have[0] === wanted[0];
+    });
+    if (booked) {
+      throw new ClinicError(`${booked.patientName} already has a booking (${visitRef(booked)}). Use check_in_patient with "${visitRef(booked)}" instead of registering a new walk-in.`);
+    }
+
     // 1. Deterministic red flags first; then Laya (System 1, calibrated) or the LLM (System 2)
     //    when Laya isn't confident. Take the most severe — automation never lowers priority.
     const redFlags = screenRedFlags(input.complaint);
@@ -173,8 +186,30 @@ export async function doctorOffDuty(doctorRef: string, reason: string, actor: Ac
     const d = needDoctor(state, doctorRef);
     await repo.updateDoctor(d.id, { status: "off_duty" });
     await repo.logEvent({ type: "doctor_off_duty", actor, summary: `${d.name} off duty: ${reason}`, doctorId: d.id, payload: { reason } });
+    // Nobody is left stranded: each patient moves to the least-busy on-duty doctor of the same
+    // specialty (children stay in Pediatrics). Only if no such doctor exists do they wait for staff.
     const stranded = state.visits.filter((v) => v.doctorId === d.id && (v.status === "waiting" || v.status === "scheduled"));
-    return { doctor: d.name, patientsNeedingReassignment: stranded.map((v) => `${visitRef(v)} ${v.patientName}`) };
+    const load = new Map(state.doctors.map((x) => [x.id, state.visits.filter((v) => v.doctorId === x.id && ["waiting", "scheduled", "in_consult"].includes(v.status)).length]));
+    const moved: string[] = [];
+    const unplaced: string[] = [];
+    for (const v of stranded) {
+      const candidates = state.doctors.filter((x) => x.id !== d.id && x.status === "on_duty" && x.specialty === d.specialty);
+      const target = candidates.sort((a, b) => (load.get(a.id) ?? 0) - (load.get(b.id) ?? 0))[0];
+      if (!target) {
+        unplaced.push(`${visitRef(v)} ${v.patientName}`);
+        continue;
+      }
+      await repo.updateVisit(v.id, { doctor_id: target.id });
+      load.set(target.id, (load.get(target.id) ?? 0) + 1);
+      await repo.logEvent({ type: "reassigned", actor, summary: `${v.patientName}: ${d.name} → ${target.name} (${d.name} left)`, visitId: v.id, doctorId: target.id });
+      moved.push(`${visitRef(v)} ${v.patientName} → ${target.name}`);
+    }
+    return {
+      doctor: d.name,
+      reassigned: moved,
+      needsStaff: unplaced.length ? unplaced : undefined,
+      next: moved.length ? "Draft 'reassigned' SMS for the moved patients." : undefined,
+    };
   });
 }
 
@@ -184,7 +219,14 @@ export async function startConsult(ref: string, actor: Actor) {
     if (v.status !== "waiting") throw new ClinicError(`${v.patientName} is ${v.status}, not waiting.`);
     const busy = state.visits.find((x) => x.doctorId === v.doctorId && x.status === "in_consult");
     if (busy) throw new ClinicError(`Doctor is still with ${busy.patientName} (${visitRef(busy)}). Finish that consult first.`);
-    await repo.updateVisit(v.id, { status: "in_consult", consult_started_at: (await clinicNow()).toISOString() });
+    const started = await repo
+      .transitionVisit(v.id, ["waiting"], { status: "in_consult", consult_started_at: (await clinicNow()).toISOString() })
+      .catch((err: Error) => {
+        // The database allows one consult per doctor (unique index): a race lands here.
+        if (/duplicate|unique/i.test(err.message)) return false;
+        throw err;
+      });
+    if (!started) throw new ClinicError(`${v.patientName} could not be called in: the doctor is busy or the visit already changed.`);
     await repo.updateDoctor(v.doctorId, { available_at: null });
     await repo.logEvent({ type: "consult_start", actor, summary: `${v.patientName} called in`, visitId: v.id, doctorId: v.doctorId });
     return { started: `${visitRef(v)} ${v.patientName}` };
@@ -198,7 +240,8 @@ export async function finishConsult(ref: string, opts: { followUpInDays?: number
     const doctor = needDoctor(state, v.doctorId);
     const endedAt = await clinicNow();
     const actualMin = v.consultStartedAt ? Math.round((endedAt.getTime() - new Date(v.consultStartedAt).getTime()) / 60_000) : null;
-    await repo.updateVisit(v.id, { status: "done", consult_ended_at: endedAt.toISOString(), notes: opts.notes ?? null });
+    const ended = await repo.transitionVisit(v.id, ["in_consult"], { status: "done", consult_ended_at: endedAt.toISOString(), notes: opts.notes ?? null });
+    if (!ended) throw new ClinicError(`${v.patientName}'s consult was already finished.`);
     const newAvg = actualMin !== null ? await repo.learnConsultTime(doctor, actualMin) : doctor.avgConsultMin;
     await repo.logEvent({
       type: "consult_end",

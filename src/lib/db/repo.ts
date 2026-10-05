@@ -117,6 +117,16 @@ export async function updateVisit(id: string, patch: Row) {
   must(await db().from("visits").update(patch).eq("id", id).select("id"), "update visit");
 }
 
+/**
+ * Change a visit's status only if it is still in one of the expected states (compare-and-set), so
+ * two concurrent actors (agent, staff, autopilot) can't both start or end the same visit.
+ */
+export async function transitionVisit(id: string, from: string[], patch: Row): Promise<boolean> {
+  const { data, error } = await db().from("visits").update(patch).eq("id", id).in("status", from).select("id");
+  if (error) throw new Error(`transition visit: ${error.message}`);
+  return !!data?.length;
+}
+
 export async function updateDoctor(id: string, patch: Row) {
   must(await db().from("doctors").update(patch).eq("id", id).select("id"), "update doctor");
 }

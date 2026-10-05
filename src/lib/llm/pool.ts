@@ -5,6 +5,7 @@
 // Budgets are read from a shared ledger in Supabase (llm_calls + model_cooldowns), so every
 // serverless instance sees the same counts and we avoid the 429 instead of discovering it.
 import { createMiddleware } from "langchain";
+import { AIMessage, ToolMessage, type BaseMessage } from "@langchain/core/messages";
 import { db } from "../db/client";
 import { reasoningPool, type PoolMember } from "./models";
 import { colabEndpoint } from "./router";
@@ -140,7 +141,9 @@ export function quotaAwarePoolMiddleware() {
             timer = setTimeout(() => reject(new Error(`timeout: ${member.id} took over ${CALL_TIMEOUT_MS / 1000}s`)), CALL_TIMEOUT_MS);
           });
           const tools = (request.tools ?? []).filter((t) => !HIDDEN_TOOLS.has((t as { name?: string }).name ?? ""));
-          const result = await Promise.race([handler({ ...request, tools, model: model as never }), timeout]);
+          // Mistral only accepts text/image parts; Gemini history carries other part types.
+          const messages = member.spec.provider === "mistral" ? flattenForMistral(request.messages) : request.messages;
+          const result = await Promise.race([handler({ ...request, tools, messages, model: model as never }), timeout]);
           await logCall(member, true, Date.now() - started);
           return result;
         } catch (err) {
@@ -149,8 +152,9 @@ export function quotaAwarePoolMiddleware() {
           await logCall(member, false, Date.now() - started, message);
           // A self-hosted endpoint that answers oddly (wrong server behind the tunnel, model not
           // loaded) is skipped for a while rather than failing the clinic's turn.
-          const cool = cooldownFor(message) ?? (member.spec.provider === "colab" ? 5 * 60_000 : null);
-          if (cool === null) throw err;
+          // Unknown errors skip this member for a while instead of failing the clinic's turn; if every
+          // member fails, the last error is reported.
+          const cool = cooldownFor(message) ?? (/only supports|not supported|unsupported|invalid.*(content|message)/i.test(message) ? 10 * 60_000 : 60_000);
           await setCooldown(member.id, cool, message);
         } finally {
           clearTimeout(timer);
@@ -180,5 +184,24 @@ export async function poolStatus() {
       state: at <= now ? "ready" : Number.isFinite(at) ? "cooling" : "exhausted",
       readyInSec: at <= now ? 0 : Number.isFinite(at) ? Math.ceil((at - now) / 1000) : null,
     };
+  });
+}
+
+function textOnly(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => (typeof part === "string" ? part : part && typeof part === "object" && (part as { type?: string }).type === "text" ? String((part as { text?: unknown }).text ?? "") : ""))
+    .join("");
+}
+
+/** Rewrite rich (Gemini) message content as plain text so Mistral accepts the history. */
+function flattenForMistral(messages: BaseMessage[]): BaseMessage[] {
+  return messages.map((m) => {
+    if (typeof m.content === "string") return m;
+    if (AIMessage.isInstance(m)) return new AIMessage({ content: textOnly(m.content), tool_calls: m.tool_calls, id: m.id });
+    if (ToolMessage.isInstance(m)) return new ToolMessage({ content: textOnly(m.content), tool_call_id: m.tool_call_id, name: m.name, id: m.id });
+    const Ctor = m.constructor as new (fields: { content: string; id?: string }) => BaseMessage;
+    return new Ctor({ content: textOnly(m.content), id: m.id });
   });
 }

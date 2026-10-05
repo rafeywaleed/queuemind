@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "smoke": "tsx --env-file=.env.local scripts/smoke.ts"
+    "smoke": "tsx --env-file=.env.local scripts/smoke.ts",
+    "test:e2e": "tsx --env-file=.env.local scripts/e2e.mts",
+    "test:agent": "tsx --env-file=.env.local scripts/agent-scenarios.mts",
+    "test:ui": "node scripts/ui-check.mjs ."
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
