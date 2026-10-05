@@ -87,10 +87,13 @@ await check("clock: +10 min skip", async () => {
 });
 await check("clock: 12× speed advances ~12 s per real second", async () => {
   await http("POST", "/api/sim/clock", { action: "speed", speed: 12 });
+  // Divide by the real time between the two calls, not the sleep: on a remote deploy each
+  // request adds network latency that the server clock (correctly) counts.
+  const t0 = Date.now();
   const a = Date.parse((await http("POST", "/api/sim/clock", { action: "play" })).json.now);
-  await sleep(2000);
+  await sleep(4000);
   const b = Date.parse((await http("POST", "/api/sim/clock", { action: "pause" })).json.now);
-  const ratio = (b - a) / 2000;
+  const ratio = (b - a) / (Date.now() - t0);
   assert(ratio > 9 && ratio < 16, `ratio ${ratio.toFixed(1)}`);
   await http("POST", "/api/sim/clock", { action: "speed", speed: 6 });
   return `ratio ${ratio.toFixed(1)}×`;
