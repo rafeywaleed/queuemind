@@ -1,6 +1,8 @@
 // Visit every screen, click the key controls, and fail on any console/page error (dev-only).
 import { chromium } from "playwright";
 const out = process.argv[2];
+// Start from a fresh shift so earlier tests (e.g. a doctor marked off duty) can't disable controls.
+await fetch(`${process.env.UI_BASE ?? "http://localhost:3000"}/api/demo`, { method: "POST" });
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1500, height: 950 } });
 const errors = [];
@@ -13,7 +15,7 @@ async function step(name, fn) {
   catch (e) { results.push(["FAIL", name, String(e.message).slice(0, 160)]); }
 }
 async function open(persona) {
-  await page.goto("http://localhost:3000");
+  await page.goto(process.env.UI_BASE ?? "http://localhost:3000");
   await page.evaluate((p) => { localStorage.setItem("queuemind.persona", p); localStorage.setItem("queuemind.intro-seen", "1"); }, persona);
   await page.reload();
   await page.waitForFunction(() => document.body.innerText.length > 400 && !document.querySelector("main .animate-spin:only-child"), null, { timeout: 60000 });

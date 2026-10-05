@@ -2,6 +2,7 @@
 // Waiting-room display. Tokens only: no names, no symptoms, because the screen is public.
 import { HeartPulse } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PoweredBy } from "@/components/qm/logo";
 import { clock } from "@/lib/client/format";
 import type { ClinicData } from "@/lib/client/use-clinic";
 
@@ -25,7 +26,9 @@ export function TvView({ data }: { data: ClinicData }) {
           <HeartPulse className="size-7 text-[oklch(0.75_0.12_190)]" />
           <div>
             <div className="font-display text-3xl">{board.clinic.name}</div>
-            <div className="text-sm text-white/50">Please wait for your token to be called</div>
+            <div className="flex items-center gap-3 text-sm text-white/50">
+              Please wait for your token to be called <PoweredBy dark />
+            </div>
           </div>
         </div>
         <div className="font-mono text-5xl font-semibold tabular">{clock(board.snapshot.computedAt, tz)}</div>

@@ -1,12 +1,13 @@
 "use client";
 // What a patient sees on their phone: their place in line, an honest time, and the SMS the
 // clinic actually sent them (only approved messages, never drafts).
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BellRing, Clock3, Gauge, Lock, MapPin, MessageSquare, Send, ShieldCheck, Signal, Wifi } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { clock, KIND_LABEL, LANGUAGE_LABEL, minsBetween } from "@/lib/client/format";
 import { postJson, type ClinicData } from "@/lib/client/use-clinic";
+import { PoweredBy } from "@/components/qm/logo";
 import type { AgentSession } from "@/lib/client/use-agent";
 import type { BoardVisit, PatientMessageResult } from "@/lib/client/types";
 
@@ -32,6 +33,12 @@ export function PatientView({ data, visitId, onVisit, agent }: { data: ClinicDat
     ...inbound.map((m) => ({ id: m.id, from: "patient" as const, body: m.body, at: m.created_at, note: m.decided_by })),
   ].sort((a, b) => a.at.localeCompare(b.at));
   const [draft, setDraft] = useState("");
+  // Keep the newest message in view, like a real messaging app.
+  const scroller = useRef<HTMLDivElement>(null);
+  const lastMessage = thread[thread.length - 1]?.id;
+  useEffect(() => {
+    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
+  }, [lastMessage, visitId]);
   const [sending, setSending] = useState(false);
   const sendText = async (text: string) => {
     if (!visit || !text.trim()) return;
@@ -83,9 +90,10 @@ export function PatientView({ data, visitId, onVisit, agent }: { data: ClinicDat
                 <Signal className="size-3" /> <Wifi className="size-3" />
               </span>
             </div>
-            <div className="flex-1 space-y-3 overflow-y-auto px-4 pt-4 pb-4">
+            <div ref={scroller} className="flex-1 space-y-3 overflow-y-auto px-4 pt-4 pb-4">
               <div className="text-center">
                 <div className="text-[11px] font-medium text-muted-foreground">{board.clinic.name}</div>
+                <PoweredBy className="mt-0.5" />
                 <div className="text-xs text-muted-foreground">{LANGUAGE_LABEL[visit.patientLanguage] ?? visit.patientLanguage}</div>
               </div>
               <TokenCard visit={visit} planned={planned?.q} doctorName={doctor?.name ?? ""} room={board.doctors.findIndex((d) => d.id === doctor?.id) + 1} tz={tz} delayMin={doctorPlan?.delayMin ?? 0} now={board.snapshot.computedAt} />
@@ -144,8 +152,8 @@ export function PatientView({ data, visitId, onVisit, agent }: { data: ClinicDat
         <Explainer icon={BellRing} title="Told before they wait">
           Patients who haven&apos;t arrived get a delay SMS so they can come later instead of sitting in the room.
         </Explainer>
-        <Explainer icon={ShieldCheck} title="Human-approved messages">
-          {drafts > 0 ? `${drafts} draft${drafts > 1 ? "s" : ""} for this patient ${drafts > 1 ? "are" : "is"} waiting for front-desk approval and not shown here yet.` : "Patients only ever see messages a staff member approved."}
+        <Explainer icon={ShieldCheck} title="Humans approve what the AI writes">
+          {drafts > 0 ? `${drafts} draft${drafts > 1 ? "s" : ""} for this patient ${drafts > 1 ? "are" : "is"} waiting for front-desk approval and not shown here yet.` : "Anything the AI writes waits for a staff member. Only factual replies (times straight from the queue engine) go out instantly."}
         </Explainer>
         <Explainer icon={Lock} title="Private by design">
           Patients see only their own visit. The waiting-room screen shows tokens, never names or symptoms.

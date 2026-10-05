@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { StatusPill } from "@/components/qm/status-pill";
+import { LogoMark } from "@/components/qm/logo";
 import { FrontDeskView } from "@/components/views/front-desk";
 import { DoctorView } from "@/components/views/doctor";
 import { PatientView } from "@/components/views/patient";
@@ -98,7 +99,7 @@ export function QueueMindApp() {
       <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur">
         <div className="mx-auto flex max-w-[1680px] flex-wrap items-center gap-x-5 gap-y-2 px-4 py-2.5 md:px-6">
           <div className="flex items-center gap-2.5">
-            <Logo />
+            <LogoMark />
             <div className="leading-tight">
               <div className="font-display text-2xl leading-none">
                 Queue<span className="italic text-primary">Mind</span>
@@ -192,18 +193,6 @@ function NavButton({ active, onClick, icon: Icon, label, primary }: { active: bo
   );
 }
 
-function Logo() {
-  return (
-    <svg viewBox="0 0 32 32" className="size-9" aria-hidden>
-      <rect width="32" height="32" rx="9" className="fill-primary" />
-      <rect x="7" y="9" width="11" height="3.2" rx="1.6" fill="white" opacity="0.55" />
-      <rect x="7" y="14.4" width="15" height="3.2" rx="1.6" fill="white" opacity="0.8" />
-      <rect x="7" y="19.8" width="18" height="3.2" rx="1.6" fill="white" />
-      <circle cx="23.5" cy="10.6" r="2.4" fill="white" />
-    </svg>
-  );
-}
-
 function IntroDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const steps = [
     ["Start in the Simulation", "A 3-doctor clinic mid-shift: one consult running over, a likely no-show, patients slipping behind. Reset demo any time for a fresh shift."],
@@ -215,8 +204,11 @@ function IntroDialog({ open, onClose }: { open: boolean; onClose: () => void }) 
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="font-display text-3xl font-normal">
-            Queue<span className="italic text-primary">Mind</span>
+          <DialogTitle className="flex items-center gap-3 font-display text-3xl font-normal">
+            <LogoMark className="size-10" />
+            <span>
+              Queue<span className="italic text-primary">Mind</span>
+            </span>
           </DialogTitle>
           <DialogDescription>An AI operations agent for the clinic waiting room: delays, walk-ins, emergencies, no-shows and patient messages, replanned live.</DialogDescription>
         </DialogHeader>

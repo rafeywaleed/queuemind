@@ -521,7 +521,8 @@ function replyTemplate(intent: PatientIntent, lang: string, f: { name: string; c
 }
 
 export async function handlePatientMessage(ref: string, text: string) {
-  const { state, snapshot } = await stateAndBoard();
+  // Stamp the message when it arrives, so the clinic's reply always sorts after it in the thread.
+  const { state, snapshot, now: receivedAt } = await stateAndBoard();
   const v = needVisit(state, ref);
   const body = text.trim().slice(0, 500);
   const redFlags = screenRedFlags(body);
@@ -588,7 +589,7 @@ export async function handlePatientMessage(ref: string, text: string) {
     confidence: intent ? confidence : null,
     decided_by: decidedBy,
     outcome,
-    created_at: (await clinicNow()).toISOString(),
+    created_at: receivedAt.toISOString(),
   });
   await repo.logEvent({
     type: "patient_message",
