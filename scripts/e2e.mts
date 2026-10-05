@@ -177,17 +177,22 @@ await check("guardrail: one consult per doctor under a race", async () => {
 });
 
 // ---------------------------------------------------------------- outbox (human in the loop)
+let approvedVisit: string | null = null;
 await check("outbox: draft → pending, approve → sent, reject → rejected", async () => {
   const drafts = await clinic.draftNotifications(["#8", "#11"], "delay", null, "agent");
   assert(drafts.every((d: any) => d.status === "pending_approval" || d.skipped), JSON.stringify(drafts).slice(0, 200));
   const pending = (await http("GET", "/api/notifications?status=pending_approval")).json;
   assert(pending.length >= 2, `pending ${pending.length}`);
   assert((await http("POST", "/api/notifications", { id: pending[0].id, decision: "sent" })).json.status === "sent", "approve failed");
+  approvedVisit = pending[0].visit_id;
   assert((await http("POST", "/api/notifications", { id: pending[1].id, decision: "rejected" })).json.status === "rejected", "reject failed");
   assert((await http("POST", "/api/notifications", { id: pending[0].id, decision: "sent" })).status !== 200, "double approve accepted");
 });
 await check("outbox: a duplicate draft within 20 min is skipped", async () => {
-  const again = await clinic.draftNotifications(["#11"], "delay", null, "agent");
+  // Re-draft for the patient whose message was approved (a rejected draft may legitimately be redone).
+  const v = (await board()).visits.find((x: any) => x.id === approvedVisit);
+  assert(v, "approved visit not found");
+  const again = await clinic.draftNotifications([v.token ? `#${v.token}` : v.id], "delay", null, "agent");
   assert((again[0] as any).skipped, JSON.stringify(again));
 });
 await check("numbers guard: drafts only contain numbers from the facts", async () => {
