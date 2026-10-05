@@ -171,12 +171,12 @@ export const NODES: HarnessNode[] = [
     id: "fast",
     layer: "models",
     title: "Fast lane",
-    subtitle: "Colab Llama → Groq → Gemini",
+    subtitle: "Colab → Groq → Mistral → Gemini",
     x: col("models"),
     y: 330,
     spec: [
       "Small structured jobs: walk-in intake triage, SMS drafting in the patient's language.",
-      "Self-hosted Llama (Colab) when its heartbeat is fresh; else Groq gpt-oss-20b; else Gemini Flash-Lite.",
+      "Self-hosted Llama (Colab) when its heartbeat is fresh; else Groq gpt-oss-20b; else Mistral ministral-8b; else Gemini Flash-Lite.",
       "Circuit breaker, zod-validated JSON, deterministic fallback (template) if all fail.",
       "Numbers guard: a draft that invents a number is replaced by the template.",
     ],
@@ -263,7 +263,7 @@ export const NODES: HarnessNode[] = [
     spec: [
       "Greedy per-doctor simulation: priority tiers → booking/arrival order.",
       "Grace period, no-show cutoff, overrun tail, doctor delay, fairness guard (max 2 overtakes).",
-      "Produces waits, start times and alerts. 13 tests.",
+      "Emergencies float to whichever on-duty doctor frees up first; bookings for later days stay out of today's queue.", "Produces waits, start times and alerts. 21 unit tests.",
     ],
     code: "src/lib/queue/engine.ts",
   },
