@@ -88,9 +88,7 @@ export function useClinic(): ClinicData {
     void refresh();
     void refreshStatus();
     void getJson<Scenario[]>("/api/demo").then(setScenarios).catch(() => undefined);
-    // Waits are time-dependent: recompute the board every 20 s even without changes.
-    const poll = setInterval(() => void refresh(), 20_000);
-    const statusPoll = setInterval(() => void refreshStatus(), 30_000);
+    const statusPoll = setInterval(() => void refreshStatus(), 20_000);
     let channel: ReturnType<NonNullable<typeof supabase>["channel"]> | null = null;
     if (supabase) {
       channel = supabase.channel("clinic-live");
@@ -100,11 +98,18 @@ export function useClinic(): ClinicData {
       channel.subscribe((s) => setLive(s === "SUBSCRIBED"));
     }
     return () => {
-      clearInterval(poll);
       clearInterval(statusPoll);
       if (channel && supabase) void supabase.removeChannel(channel);
     };
   }, [refresh, refreshStatus, scheduleRefresh]);
+
+  // Waits are time-dependent. While the clinic clock runs (default 6×), refresh every 3 s so the
+  // floor moves smoothly and the autopilot gets its ticks; when paused, every 20 s is enough.
+  const running = !!board?.clock && !board.clock.paused;
+  useEffect(() => {
+    const poll = setInterval(() => void refresh(), running ? 3_000 : 20_000);
+    return () => clearInterval(poll);
+  }, [running, refresh]);
 
   return { board, notifications, patientMessages, events, status, scenarios, error, live, lastUpdated, refresh, refreshStatus };
 }

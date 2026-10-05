@@ -10,8 +10,10 @@ export function minsBetween(a: string | number, b: string | number) {
   return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 60_000);
 }
 
-export function ago(iso: string) {
-  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
+/** "5m ago" relative to clinic time when given (the simulated clock runs ahead of real time). */
+export function ago(iso: string, now?: string) {
+  const base = now ? new Date(now).getTime() : Date.now();
+  const m = Math.round((base - new Date(iso).getTime()) / 60_000);
   if (m < 1) return "just now";
   if (m < 60) return `${m}m ago`;
   return `${Math.floor(m / 60)}h ${m % 60}m ago`;

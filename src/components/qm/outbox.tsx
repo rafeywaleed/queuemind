@@ -57,7 +57,7 @@ export function Outbox({ notifications, board, onChange, compact }: { notificati
                 <span>
                   {n.patients?.name} · {KIND_LABEL[n.kind] ?? n.kind}
                 </span>
-                <span>{n.decided_at ? ago(n.decided_at) : ""}</span>
+                <span>{n.decided_at ? ago(n.decided_at, board?.snapshot.computedAt) : ""}</span>
               </div>
               <div className="line-clamp-2">{n.body}</div>
             </div>

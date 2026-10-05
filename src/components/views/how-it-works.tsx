@@ -5,6 +5,7 @@ import { FileCode2, ShieldCheck } from "lucide-react";
 import { HarnessGraph } from "@/components/lab/harness-graph";
 import { NODES, TOOL_CATALOG, type NodeId } from "@/components/lab/harness-spec";
 import { StatusDetail } from "@/components/qm/status-pill";
+import { SystemMap } from "@/components/views/system-map";
 import { cn } from "@/lib/utils";
 import type { ClinicData } from "@/lib/client/use-clinic";
 
@@ -55,6 +56,9 @@ export function HowItWorksView({ data }: { data: ClinicData }) {
         </p>
       </div>
 
+      <SystemMap />
+
+      <h2 className="pt-2 text-lg font-semibold">Inside the agent harness</h2>
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="rounded-2xl border bg-card p-3">
           <HarnessGraph mode="explore" selected={selected} onSelect={setSelected} />

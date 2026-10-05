@@ -2,6 +2,7 @@
 // so reviewers always land in a live, slightly chaotic shift with real alerts to handle.
 import { CLINIC_ID, db, must } from "../db/client";
 import { localDate } from "../queue/policies";
+import { resetClock } from "./clock";
 
 const DOCTORS = {
   ayesha: "00000000-0000-0000-0000-0000000000d1",
@@ -26,6 +27,7 @@ interface SeedVisit {
   est?: number;
   reason: string;
   priority?: "normal" | "urgent";
+  notes?: string;
 }
 
 const VISITS: SeedVisit[] = [
@@ -41,7 +43,7 @@ const VISITS: SeedVisit[] = [
   { token: 12, patient: "Ali Raza", phone: "+92300000112", language: "ur", doctor: "ayesha", kind: "appointment", status: "scheduled", scheduled: 45, reason: "Back pain" },
 
   // Dr. Bilal Ahmed — General: consult badly overrunning, queue piling up
-  { token: 5, patient: "Saima Javed", phone: "+919800000105", language: "ur", doctor: "bilal", kind: "appointment", status: "in_consult", scheduled: -30, arrived: -35, started: -26, est: 12, reason: "Multiple chronic conditions review" },
+  { token: 5, patient: "Saima Javed", phone: "+919800000105", language: "ur", doctor: "bilal", kind: "appointment", status: "in_consult", scheduled: -30, arrived: -35, started: -16, est: 12, reason: "Multiple chronic conditions review", notes: "sim:overrun" },
   { token: 7, patient: "Bilal Akhtar", phone: "+92300000107", language: "en", doctor: "bilal", kind: "walk_in", status: "waiting", arrived: -22, reason: "Sprained ankle" },
   { token: 8, patient: "Hina Shah", phone: "+919800000108", language: "ur", doctor: "bilal", kind: "appointment", status: "waiting", scheduled: -15, arrived: -20, reason: "Thyroid follow-up" },
   { token: 9, patient: "Kamran Iqbal", phone: "+92300000109", language: "en", doctor: "bilal", kind: "appointment", status: "waiting", scheduled: 0, arrived: -4, reason: "Skin rash" },
@@ -56,7 +58,8 @@ const VISITS: SeedVisit[] = [
 ];
 
 export async function resetDemo() {
-  const now = Date.now();
+  // A fresh shift starts the clinic clock again (default 6×: 10 real seconds = 1 clinic minute).
+  const now = (await resetClock()).anchorSim;
   const at = (min?: number) => (min === undefined ? null : new Date(now + min * 60_000).toISOString());
 
   // Clear the clinic's operational data (agent checkpoints are per-thread and left alone).
@@ -113,6 +116,7 @@ export async function resetDemo() {
           consult_ended_at: at(v.ended),
           est_minutes: v.est ?? null,
           reason: v.reason,
+          notes: v.notes ?? null,
         })),
       )
       .select("id"),

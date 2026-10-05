@@ -183,3 +183,7 @@ create policy "public read" on patient_messages for select using (true);
 do $$ begin
   begin alter publication supabase_realtime add table patient_messages; exception when duplicate_object then null; end;
 end $$;
+
+-- Simulated clinic clock shared by every server instance (speed, anchors, paused) + autopilot tick guard.
+alter table clinics add column if not exists clock jsonb;
+alter table clinics add column if not exists last_tick_real timestamptz;

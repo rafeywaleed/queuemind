@@ -5,7 +5,7 @@
 // Every call is logged to llm_calls so the UI can show which provider is serving and how fast.
 import { z } from "zod";
 import { db } from "../db/client";
-import { decisionEndpoint } from "./decision";
+import { decisionHealth } from "./decision";
 
 export type ProviderName = "colab" | "groq" | "mistral" | "gemini";
 
@@ -169,8 +169,7 @@ export async function routerStatus() {
       colabHealthy = false;
     }
   }
-  const laya = await decisionEndpoint();
-  const decisionStatus = { online: !!laya, model: laya?.model ?? null, lastSeenAt: laya?.lastSeenAt ?? null };
+  const decisionStatus = await decisionHealth();
   const since = new Date(Date.now() - 3_600_000).toISOString();
   const { data: calls } = await db().from("llm_calls").select("provider, ok, latency_ms, lane").in("lane", ["fast", "decision"]).gte("created_at", since).limit(1000);
   const stats: Record<string, { calls: number; ok: number; avgLatencyMs: number | null }> = {};

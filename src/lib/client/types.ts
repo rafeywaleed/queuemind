@@ -6,11 +6,19 @@ export type { DoctorPlan, PlannedVisit, Alert, Priority, VisitKind } from "@/lib
 
 export type BoardVisit = Visit & { patientPhone: string | null; parentVisitId: string | null; feeWaived: boolean; notes: string | null };
 
+export interface ClinicClock {
+  /** Clinic minutes per real minute (6 = 10 real seconds per clinic minute). */
+  speed: number;
+  paused: boolean;
+  now: string;
+}
+
 export interface Board {
   clinic: ClinicPolicy;
   doctors: Doctor[];
   visits: BoardVisit[];
   snapshot: QueueSnapshot;
+  clock?: ClinicClock;
 }
 
 export interface Notification {
@@ -78,7 +86,7 @@ export interface RouterStatus {
   selfHosted: { registered: boolean; healthy: boolean; pingMs: number | null; model: string | null; lastSeenAt: string | null };
   fastLaneOrder: string[];
   reasoning: { provider: string };
-  decision?: { online: boolean; model: string | null; lastSeenAt: string | null };
+  decision?: { online: boolean; waking?: boolean; host?: "local" | "huggingface" | "colab" | "laya-demo" | null; model: string | null; lastSeenAt: string | null };
   lastHour: Record<string, { calls: number; ok: number; avgLatencyMs: number | null }>;
   reasoningPool: PoolMemberStatus[];
 }

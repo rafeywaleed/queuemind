@@ -57,7 +57,11 @@ export function StatusDetail({ status }: { status: RouterStatus }) {
       <div className={cn("rounded-xl border px-4 py-3", status.decision?.online ? "border-qm-good/40 bg-qm-good/[0.05]" : "bg-muted/40")}>
         <div className="flex items-center justify-between">
           <div className="text-sm font-semibold">Decision lane: Laya (System 1)</div>
-          <span className={cn("text-[11px] font-semibold", status.decision?.online ? "text-qm-good" : "text-muted-foreground")}>{status.decision?.online ? "ONLINE · Colab T4" : "OFFLINE · start the notebook"}</span>
+          <span className={cn("text-[11px] font-semibold", status.decision?.online ? "text-qm-good" : "text-muted-foreground")}>{status.decision?.online
+            ? `ONLINE · ${status.decision.host === "laya-demo" ? "official Laya Space (free GPU)" : status.decision.host === "huggingface" ? "own Space" : status.decision.host === "local" ? "local" : "Colab T4"}`
+            : status.decision?.waking
+              ? "WAKING · Hugging Face"
+              : "OFFLINE · start the notebook"}</span>
         </div>
         <div className="mt-0.5 text-xs text-muted-foreground">
           Walk-in triage as typed questions with calibrated probabilities (~33 ms). Confidence ≥ 0.75 → decided without an LLM; otherwise the fast-lane LLM decides. Can only raise priority.

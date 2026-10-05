@@ -132,7 +132,7 @@ export function ManagerView({ data }: { data: ClinicData }) {
                 <div className="flex-1">
                   <div>{e.summary}</div>
                   <div className="font-mono text-[10px] text-muted-foreground">
-                    {e.type} · {e.actor} · {ago(e.created_at)}
+                    {e.type} · {e.actor} · {ago(e.created_at, board.snapshot.computedAt)}
                   </div>
                 </div>
               </li>

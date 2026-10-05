@@ -71,6 +71,14 @@ const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "
 
 export function LayaChip({ status, onRefresh }: { status: RouterStatus | null; onRefresh: () => Promise<void> }) {
   const { online, waiting, elapsed, start } = useLayaStarter(status, onRefresh);
+  if (!online && status?.decision?.waking) {
+    return (
+      <span className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12.5px]">
+        <Loader2 className="size-4 animate-spin text-primary" /> Waking Laya on Hugging Face…
+        <span className="text-muted-foreground">usually 1–3 min; the LLM decides meanwhile</span>
+      </span>
+    );
+  }
   if (online) {
     return (
       <span className="inline-flex items-center gap-2 rounded-full border border-qm-good/40 bg-qm-good/10 px-3 py-1.5 text-[12.5px] font-medium text-qm-good">
@@ -105,6 +113,16 @@ export function LayaBanner({ status, onRefresh }: { status: RouterStatus | null;
     }
   });
   if (!status || online || hidden) return null;
+  if (status.decision?.waking) {
+    return (
+      <div className="mb-3 flex items-center gap-3 rounded-2xl border border-primary/30 bg-accent/40 px-4 py-2.5 text-sm">
+        <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
+        <span className="flex-1">
+          <b>Waking Laya</b>, the decision model, on Hugging Face (usually 1–3 min). Everything works meanwhile; the LLM decides until it&apos;s up.
+        </span>
+      </div>
+    );
+  }
   return (
     <div className={cn("mb-3 flex flex-wrap items-center gap-3 rounded-2xl border px-4 py-2.5 text-sm", waiting ? "border-primary/40 bg-accent/40" : "bg-card")}>
       <Gauge className="size-4 shrink-0 text-qm-appointment" />

@@ -9,6 +9,7 @@ import * as repo from "../db/repo";
 import { db } from "../db/client";
 import { draftPatientMessage, triageWalkIn, type MessagePurpose } from "../llm/tasks";
 import { decide } from "../llm/decision";
+import { clinicNow } from "./clock";
 import { findDoctorByRef, findVisitByRef, fmtDate, fmtTime, greetingName, renderBoard, renderImpact, visitRef } from "./format";
 
 export type Actor = "agent" | "staff" | "system" | "patient";
@@ -18,8 +19,8 @@ export class ClinicError extends Error {}
 const ACTIVE = new Set(["scheduled", "waiting", "in_consult"]);
 
 async function stateAndBoard() {
-  const state = await repo.loadClinicState();
-  return { state, snapshot: computeQueue(state) };
+  const [state, now] = await Promise.all([repo.loadClinicState(), clinicNow()]);
+  return { state, snapshot: computeQueue(state, now), now };
 }
 
 function needVisit(state: ClinicState, ref: string) {
@@ -60,7 +61,7 @@ export async function checkIn(ref: string, actor: Actor) {
   return withImpact(async (state) => {
     const v = needVisit(state, ref);
     if (v.status !== "scheduled") throw new ClinicError(`${v.patientName} is already ${v.status}.`);
-    const now = new Date();
+    const now = await clinicNow();
     const token = v.token ?? (await repo.nextToken(state.clinic.timezone));
     await repo.updateVisit(v.id, { status: "waiting", arrived_at: now.toISOString(), token });
     const lateBy = v.scheduledAt ? Math.round((now.getTime() - new Date(v.scheduledAt).getTime()) / 60_000) : 0;
@@ -95,7 +96,7 @@ export async function registerWalkIn(
       if (!candidates.length) throw new ClinicError("No doctor is on duty.");
       let best = { doctor: candidates[0], wait: Infinity };
       for (const d of candidates) {
-        const sim = simulate(state, [{ type: "add_walk_in", doctorId: d.id, estMinutes: intake.estMinutes ?? d.avgConsultMin, priority }]);
+        const sim = simulate(state, [{ type: "add_walk_in", doctorId: d.id, estMinutes: intake.estMinutes ?? d.avgConsultMin, priority }], await clinicNow());
         const mine = sim.after.doctors.find((x) => x.doctorId === d.id)?.queue.find((q) => q.visitId.startsWith("hypothetical"));
         if (mine && mine.waitMin < best.wait) best = { doctor: d, wait: mine.waitMin };
       }
@@ -112,7 +113,7 @@ export async function registerWalkIn(
       priority,
       prioritySource: redFlags.level !== "normal" ? "red_flag_rules" : intake.urgency !== "normal" ? (intake.decidedBy === "laya" ? "laya" : "intake_model") : "default",
       token,
-      arrivedAt: new Date().toISOString(),
+      arrivedAt: (await clinicNow()).toISOString(),
       estMinutes: intake.estMinutes,
       reason: intake.summary,
     });
@@ -151,7 +152,7 @@ export async function registerWalkIn(
 export async function reportDoctorDelay(doctorRef: string, minutes: number, reason: string, actor: Actor) {
   return withImpact(async (state) => {
     const d = needDoctor(state, doctorRef);
-    const availableAt = new Date(Date.now() + minutes * 60_000).toISOString();
+    const availableAt = new Date((await clinicNow()).getTime() + minutes * 60_000).toISOString();
     await repo.updateDoctor(d.id, { available_at: availableAt, status: "on_duty" });
     await repo.logEvent({ type: "doctor_delay", actor, summary: `${d.name} delayed ${minutes} min: ${reason}`, doctorId: d.id, payload: { minutes, reason } });
     return { doctor: d.name, availableAt: fmtTime(availableAt, state.clinic.timezone) };
@@ -183,7 +184,7 @@ export async function startConsult(ref: string, actor: Actor) {
     if (v.status !== "waiting") throw new ClinicError(`${v.patientName} is ${v.status}, not waiting.`);
     const busy = state.visits.find((x) => x.doctorId === v.doctorId && x.status === "in_consult");
     if (busy) throw new ClinicError(`Doctor is still with ${busy.patientName} (${visitRef(busy)}). Finish that consult first.`);
-    await repo.updateVisit(v.id, { status: "in_consult", consult_started_at: new Date().toISOString() });
+    await repo.updateVisit(v.id, { status: "in_consult", consult_started_at: (await clinicNow()).toISOString() });
     await repo.updateDoctor(v.doctorId, { available_at: null });
     await repo.logEvent({ type: "consult_start", actor, summary: `${v.patientName} called in`, visitId: v.id, doctorId: v.doctorId });
     return { started: `${visitRef(v)} ${v.patientName}` };
@@ -195,7 +196,7 @@ export async function finishConsult(ref: string, opts: { followUpInDays?: number
     const v = needVisit(state, ref);
     if (v.status !== "in_consult") throw new ClinicError(`${v.patientName} is ${v.status}, not in consult.`);
     const doctor = needDoctor(state, v.doctorId);
-    const endedAt = new Date();
+    const endedAt = await clinicNow();
     const actualMin = v.consultStartedAt ? Math.round((endedAt.getTime() - new Date(v.consultStartedAt).getTime()) / 60_000) : null;
     await repo.updateVisit(v.id, { status: "done", consult_ended_at: endedAt.toISOString(), notes: opts.notes ?? null });
     const newAvg = actualMin !== null ? await repo.learnConsultTime(doctor, actualMin) : doctor.avgConsultMin;
@@ -217,7 +218,7 @@ export async function bookFollowUp(ref: string, inDays: number, actor: Actor) {
   return withImpact(async (state) => {
     const parent = needVisit(state, ref);
     const doctor = needDoctor(state, parent.doctorId);
-    const consultEnded = parent.consultEndedAt ?? new Date().toISOString();
+    const consultEnded = parent.consultEndedAt ?? (await clinicNow()).toISOString();
     const at = new Date(new Date(consultEnded).getTime() + inDays * 86_400_000);
     at.setUTCMinutes(Math.round(at.getUTCMinutes() / 15) * 15, 0, 0);
     const fee = followUpFee(consultEnded, at.toISOString(), state.clinic.freeFollowUpDays, state.clinic.timezone);
@@ -247,7 +248,7 @@ export async function bookFollowUp(ref: string, inDays: number, actor: Actor) {
         fee: fee.free ? "This follow-up is free of charge." : "Standard consultation fee applies.",
       },
     });
-    const sendAt = new Date(Math.max(Date.now(), at.getTime() - 86_400_000)).toISOString();
+    const sendAt = new Date(Math.max((await clinicNow()).getTime(), at.getTime() - 86_400_000)).toISOString();
     await repo.insertNotification({ visitId: visit.id, patientId: parent.patientId, kind: "follow_up_reminder", body: draft.body, sendAt, draftedBy: draft.servedBy });
     await repo.logEvent({
       type: "follow_up_booked",
@@ -275,7 +276,7 @@ export async function markNoShow(ref: string, actor: Actor) {
   return withImpact(async (state) => {
     const v = needVisit(state, ref);
     if (v.status !== "scheduled") throw new ClinicError(`${v.patientName} is ${v.status}; only not-yet-arrived bookings can be no-shows.`);
-    const overdue = v.scheduledAt ? Math.round((Date.now() - new Date(v.scheduledAt).getTime()) / 60_000) : 0;
+    const overdue = v.scheduledAt ? Math.round(((await clinicNow()).getTime() - new Date(v.scheduledAt).getTime()) / 60_000) : 0;
     if (overdue < state.clinic.noShowMinutes) {
       throw new ClinicError(`Only ${overdue} min past the slot; policy waits ${state.clinic.noShowMinutes} min before a no-show.`);
     }
@@ -333,7 +334,7 @@ export interface OptionChange {
 
 /** Compare alternative plans on a sandbox copy of the clinic. Nothing is saved. */
 export async function simulateOptions(options: { label: string; changes: OptionChange[] }[]) {
-  const { state } = await stateAndBoard();
+  const { state, now } = await stateAndBoard();
   const toHypothetical = (c: OptionChange): Hypothetical => {
     const d = () => needDoctor(state, c.doctor ?? "").id;
     const v = () => needVisit(state, c.visit ?? "").id;
@@ -353,7 +354,7 @@ export async function simulateOptions(options: { label: string; changes: OptionC
     }
   };
   return options.map((o) => {
-    const result = simulate(state, o.changes.map(toHypothetical));
+    const result = simulate(state, o.changes.map(toHypothetical), now);
     return {
       option: o.label,
       ...result.summary,
@@ -380,7 +381,7 @@ export async function draftNotifications(refs: string[], purpose: MessagePurpose
       .eq("visit_id", v.id)
       .eq("kind", purpose)
       .neq("status", "rejected")
-      .gte("created_at", new Date(Date.now() - 20 * 60_000).toISOString())
+      .gte("created_at", new Date((await clinicNow()).getTime() - 20 * 60_000).toISOString())
       .limit(1);
     if (recent.data?.length) {
       results.push({ ref: visitRef(v), skipped: `already drafted a '${purpose}' message in the last 20 min` });
@@ -544,6 +545,7 @@ export async function handlePatientMessage(ref: string, text: string) {
     confidence: intent ? confidence : null,
     decided_by: decidedBy,
     outcome,
+    created_at: (await clinicNow()).toISOString(),
   });
   await repo.logEvent({
     type: "patient_message",

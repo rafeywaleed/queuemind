@@ -11,6 +11,7 @@ import { ClinicScene } from "@/components/sim/scene";
 import { agentFlow, FlowLine, patientFlow, staffFlow, type FlowNode } from "@/components/sim/flow";
 import { ImpactChip, parseResult, STEP_META } from "@/components/qm/agent-console";
 import { LayaChip } from "@/components/qm/laya-status";
+import { ClockControls, LiveFeed, Stats } from "@/components/sim/hud";
 import { cn } from "@/lib/utils";
 import { clock, KIND_LABEL, LANGUAGE_LABEL } from "@/lib/client/format";
 import { postJson, type ClinicData } from "@/lib/client/use-clinic";
@@ -97,14 +98,20 @@ export function SimulationView({ data, agent }: { data: ClinicData; agent: Agent
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-4xl leading-none">Clinic simulation</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Make something happen on the right. Watch the clinic react, and follow every step the system takes below.</p>
+          <p className="mt-1 text-sm text-muted-foreground">The clinic runs by itself (10 real seconds = 1 clinic minute). Make something happen on the right, watch the floor react, and follow every step below.</p>
         </div>
         <LayaChip status={data.status} onRefresh={data.refreshStatus} />
+      </div>
+
+      <div className="flex flex-wrap items-stretch gap-3">
+        <ClockControls board={board} onChange={() => void data.refresh()} />
+        <Stats board={board} />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-3">
           <ClinicScene board={board} notifications={data.notifications} speech={busy || run ? speech : null} selected={selected} onSelect={setSelected} />
+          <LiveFeed events={data.events} timeZone={board.clinic.timezone} />
           <Legend />
         </div>
 

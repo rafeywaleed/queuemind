@@ -1,5 +1,6 @@
 // Data access: maps Supabase rows <-> engine types. All mutations go through here.
 import { CLINIC_ID, db, must } from "./client";
+import { clinicNow } from "../clinic/clock";
 import { localDate } from "../queue/policies";
 import type { ClinicPolicy, ClinicState, Doctor, Priority, Visit, VisitKind, VisitStatus } from "../queue/types";
 
@@ -60,8 +61,9 @@ export function toVisit(r: Row): Visit & { patientPhone: string | null; parentVi
 }
 
 export async function loadClinicState(clinicId = CLINIC_ID): Promise<ClinicState> {
-  const since = new Date(Date.now() - WINDOW_HOURS * 3_600_000).toISOString();
-  const until = new Date(Date.now() + WINDOW_HOURS * 3_600_000).toISOString();
+  const now = (await clinicNow()).getTime();
+  const since = new Date(now - WINDOW_HOURS * 3_600_000).toISOString();
+  const until = new Date(now + WINDOW_HOURS * 3_600_000).toISOString();
   const [clinic, doctors, visits] = await Promise.all([
     db().from("clinics").select("*").eq("id", clinicId).single(),
     db().from("doctors").select("*").eq("clinic_id", clinicId).order("name"),
@@ -191,7 +193,7 @@ export async function searchPatients(query: string, clinicId = CLINIC_ID) {
 }
 
 export async function nextToken(timezone: string, clinicId = CLINIC_ID): Promise<number> {
-  return must(await db().rpc("next_token", { p_clinic: clinicId, p_day: localDate(new Date(), timezone) }), "next token") as number;
+  return must(await db().rpc("next_token", { p_clinic: clinicId, p_day: localDate(await clinicNow(), timezone) }), "next token") as number;
 }
 
 export async function logEvent(e: {
@@ -214,6 +216,7 @@ export async function logEvent(e: {
         visit_id: e.visitId ?? null,
         doctor_id: e.doctorId ?? null,
         payload: e.payload ?? {},
+        created_at: (await clinicNow()).toISOString(),
       })
       .select("id"),
     "log event",
@@ -257,7 +260,8 @@ export async function insertNotification(n: {
         send_at: n.sendAt ?? null,
         drafted_by: n.draftedBy,
         status: n.status ?? "pending_approval",
-        decided_at: n.status === "sent" ? new Date().toISOString() : null,
+        created_at: (await clinicNow()).toISOString(),
+        decided_at: n.status === "sent" ? (await clinicNow()).toISOString() : null,
       })
       .select("*")
       .single(),
@@ -272,7 +276,7 @@ export async function listNotifications(status?: string, clinicId = CLINIC_ID) {
 }
 
 export async function decideNotification(id: string, decision: "sent" | "rejected", body?: string) {
-  const patch: Row = { status: decision, decided_at: new Date().toISOString() };
+  const patch: Row = { status: decision, decided_at: (await clinicNow()).toISOString() };
   if (body) patch.body = body;
   return must(
     await db().from("notifications").update(patch).eq("id", id).eq("status", "pending_approval").select("*").maybeSingle(),

@@ -217,7 +217,7 @@ export function ActivityLog({ data, limit = 40 }: { data: ClinicData; limit?: nu
     <ul className="max-h-[420px] divide-y overflow-y-auto">
       {data.events.slice(0, limit).map((e) => (
         <li key={e.id} className="flex items-start gap-3 px-4 py-2 text-[13px]">
-          <span className="w-16 shrink-0 pt-0.5 font-mono text-[11px] text-muted-foreground">{ago(e.created_at)}</span>
+          <span className="w-16 shrink-0 pt-0.5 font-mono text-[11px] text-muted-foreground">{ago(e.created_at, data.board?.snapshot.computedAt)}</span>
           <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase", ACTOR_STYLE[e.actor])}>{e.actor}</span>
           <span className="flex-1">{e.summary}</span>
         </li>
