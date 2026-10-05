@@ -19,7 +19,7 @@ export async function POST(req: Request) {
       case "check_in":
         return json(await clinic.checkIn(need(b.visit, "visit"), "staff"));
       case "start_consult":
-        return json(await clinic.startConsult(need(b.visit, "visit"), "staff"));
+        return json(await clinic.startConsult(need(b.visit, "visit"), "staff", b.doctor ?? null));
       case "finish_consult":
         return json(await clinic.finishConsult(need(b.visit, "visit"), { followUpInDays: b.days ?? null }, "staff"));
       case "cancel":

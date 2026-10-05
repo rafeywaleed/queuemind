@@ -91,7 +91,7 @@ export function DoctorView({ data, doctorId, onDoctor }: { data: ClinicData; doc
             <div className="mt-8 flex flex-col items-start gap-3">
               <div className="font-display text-4xl">Ready for the next patient</div>
               {next ? (
-                <Button size="lg" onClick={() => staffAction({ action: "start_consult", visit: ref(next as never) }, data.refresh, `${next.patientName} called in`)}>
+                <Button size="lg" onClick={() => staffAction({ action: "start_consult", visit: ref(next as never), doctor: doctor.id }, data.refresh, `${next.patientName} called in`)}>
                   <ArrowRight /> Call in #{next.token} {next.patientName}
                 </Button>
               ) : (

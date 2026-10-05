@@ -119,6 +119,50 @@ describe("queue engine", () => {
   });
 });
 
+describe("emergencies go to whichever doctor is free first", () => {
+  // Dr. A just started a 15-min consult; Dr. B is 2 min from finishing hers.
+  const doctors = () => [doctor("a", { avgConsultMin: 15 }), doctor("b", { avgConsultMin: 10 })];
+  const busy = () => [
+    visit({ doctorId: "a", status: "in_consult", consultStartedAt: at(-1), estMinutes: 15, patientName: "A current" }),
+    visit({ doctorId: "b", status: "in_consult", consultStartedAt: at(-8), estMinutes: 10, patientName: "B current" }),
+  ];
+
+  it("moves an emergency registered with a busy doctor to the doctor who frees up first", () => {
+    const e = visit({ doctorId: "a", priority: "emergency", patientName: "Chest pain", arrivedAt: at(0) });
+    const snap = computeQueue(state([...busy(), e], doctors()), NOW);
+    const placed = findInSnapshot(snap, e.id)!;
+    expect(placed.doctor.doctorId).toBe("b");
+    expect(placed.planned.waitMin).toBe(2);
+    expect(placed.planned.flags.join()).toMatch(/free first/);
+  });
+
+  it("spreads two emergencies across doctors instead of stacking them on one", () => {
+    const e1 = visit({ doctorId: "a", priority: "emergency", patientName: "E1", arrivedAt: at(-2) });
+    const e2 = visit({ doctorId: "a", priority: "emergency", patientName: "E2", arrivedAt: at(-1) });
+    const snap = computeQueue(state([...busy(), e1, e2], doctors()), NOW);
+    expect(findInSnapshot(snap, e1.id)!.doctor.doctorId).toBe("b"); // B free in 2 min
+    expect(findInSnapshot(snap, e2.id)!.doctor.doctorId).toBe("b"); // B free again at 12, A at 14
+    const e3 = visit({ doctorId: "b", priority: "emergency", patientName: "E3", arrivedAt: at(0) });
+    const snap3 = computeQueue(state([...busy(), e1, e2, e3], doctors()), NOW);
+    expect(findInSnapshot(snap3, e3.id)!.doctor.doctorId).toBe("a"); // A (14) now beats B (22)
+  });
+
+  it("keeps the assigned doctor on a near-tie (no flapping)", () => {
+    const e = visit({ doctorId: "a", priority: "emergency", arrivedAt: at(0) });
+    const tie = [
+      visit({ doctorId: "a", status: "in_consult", consultStartedAt: at(-5), estMinutes: 10 }),
+      visit({ doctorId: "b", status: "in_consult", consultStartedAt: at(-5.5), estMinutes: 10 }),
+    ];
+    expect(findInSnapshot(computeQueue(state([...tie, e], doctors()), NOW), e.id)!.doctor.doctorId).toBe("a");
+  });
+
+  it("never sends an emergency to an off-duty doctor", () => {
+    const e = visit({ doctorId: "a", priority: "emergency", arrivedAt: at(0) });
+    const ds = [doctor("a"), doctor("b", { status: "off_duty" })];
+    expect(findInSnapshot(computeQueue(state([e], ds), NOW), e.id)!.doctor.doctorId).toBe("a");
+  });
+});
+
 describe("what-if simulation", () => {
   it("shows that reassigning to an idle doctor cuts the wait", () => {
     const visits = [visit({ doctorId: "a" }), visit({ doctorId: "a" }), visit({ doctorId: "a", patientName: "Third" })];

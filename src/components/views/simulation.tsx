@@ -272,7 +272,7 @@ function StaffTab({ board, busy, onRun }: { board: Board; busy: boolean; onRun: 
                   <Check /> Finish #{current.token}
                 </button>
               ) : next ? (
-                <button type="button" className={btn} disabled={busy || d.status === "off_duty"} onClick={() => onRun(`${short} calls #${next.token}`, { action: "start_consult", visit: `#${next.token}` })}>
+                <button type="button" className={btn} disabled={busy || d.status === "off_duty"} onClick={() => onRun(`${short} calls #${next.token}`, { action: "start_consult", visit: `#${next.token}`, doctor: d.doctorId })}>
                   <ArrowRight /> Call #{next.token}
                 </button>
               ) : null}

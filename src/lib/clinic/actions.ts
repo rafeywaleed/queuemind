@@ -104,7 +104,8 @@ export async function registerWalkIn(
     // 2. Pick the doctor where this patient would be seen soonest (what-if per candidate doctor).
     let doctor = input.preferredDoctor ? needDoctor(state, input.preferredDoctor) : null;
     if (!doctor) {
-      const pool = state.doctors.filter((d) => d.status === "on_duty" && d.specialty === intake.specialty);
+      // Emergencies go to whichever doctor will be free first, whatever their specialty.
+      const pool = state.doctors.filter((d) => d.status === "on_duty" && (priority === "emergency" || d.specialty === intake.specialty));
       const candidates = pool.length ? pool : state.doctors.filter((d) => d.status === "on_duty");
       if (!candidates.length) throw new ClinicError("No doctor is on duty.");
       let best = { doctor: candidates[0], wait: Infinity };
@@ -213,10 +214,23 @@ export async function doctorOffDuty(doctorRef: string, reason: string, actor: Ac
   });
 }
 
-export async function startConsult(ref: string, actor: Actor) {
+/**
+ * Call a patient in. `byDoctor` is the doctor doing the calling: a waiting emergency belongs to
+ * whichever doctor is free first, so if it was planned for someone else it is moved here on the spot.
+ */
+export async function startConsult(ref: string, actor: Actor, byDoctor?: string | null) {
   return withImpact(async (state) => {
     const v = needVisit(state, ref);
     if (v.status !== "waiting") throw new ClinicError(`${v.patientName} is ${v.status}, not waiting.`);
+    const caller = byDoctor ? needDoctor(state, byDoctor) : null;
+    if (caller && caller.id !== v.doctorId) {
+      if (v.priority !== "emergency") throw new ClinicError(`${v.patientName} is with another doctor; only emergencies move to whoever is free.`);
+      if (caller.status !== "on_duty") throw new ClinicError(`${caller.name} is off duty.`);
+      const from = state.doctors.find((d) => d.id === v.doctorId);
+      await repo.updateVisit(v.id, { doctor_id: caller.id });
+      await repo.logEvent({ type: "reassigned", actor, summary: `EMERGENCY ${v.patientName}: ${from?.name} → ${caller.name} (free first)`, visitId: v.id, doctorId: caller.id });
+      v.doctorId = caller.id;
+    }
     const busy = state.visits.find((x) => x.doctorId === v.doctorId && x.status === "in_consult");
     if (busy) throw new ClinicError(`Doctor is still with ${busy.patientName} (${visitRef(busy)}). Finish that consult first.`);
     const started = await repo

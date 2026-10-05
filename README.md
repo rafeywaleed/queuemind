@@ -43,6 +43,7 @@ Screens (Next.js) ─► API routes (Vercel) ─┬─► Deep agent harness ─
 - **Humans approve AI-written SMS.** Drafts wait in the outbox. Only factual replies built from engine numbers go out instantly, and a draft that invents a number is replaced by a template.
 - **Contact before closing.** The agent can't mark a no-show until the patient has been texted.
 - **No double registration.** A booked patient who arrives is checked in, never registered again as a walk-in.
+- **Emergencies go to the first free doctor.** A waiting emergency belongs to no single doctor: the plan routes it to whoever frees up first, and whichever doctor calls next takes it.
 - **Nobody stranded.** When a doctor leaves, their patients move to the least-busy doctor of the same specialty.
 - **Post-turn verifier.** If an event needed an action (register a walk-in, record a doctor leaving) and the model skipped it, the harness re-prompts once.
 - **One consult per doctor.** A unique index plus compare-and-set status changes make races fail safely.
@@ -62,7 +63,7 @@ Deploying is the same on Vercel: import the repo, Next.js preset, paste the env 
 | Command | What it checks |
 |---|---|
 | `npm test` | Unit tests: queue engine (ordering, grace, fairness, overruns, no-shows), follow-up fees, red flags, age → specialty rule |
-| `npm run test:e2e` | 47 end-to-end checks against a running app: API validation, the clinic clock, every staff action, agent guardrails, a concurrent call-in race, outbox approve/reject, Laya patient texts, doctor-leaves auto-reassign, autopilot invariants at 30× with 3 clients |
+| `npm run test:e2e` | 49 end-to-end checks against a running app: API validation, the clinic clock, every staff action, agent guardrails, a concurrent call-in race, outbox approve/reject, Laya patient texts, doctor-leaves auto-reassign, autopilot invariants at 30× with 3 clients |
 | `npm run test:agent` | Every demo scenario through the real agent: expected tools called, no tool errors, EMERGENCY first for red-flag walk-ins, nobody stranded afterwards (uses model quota) |
 | `npm run test:ui` | Every screen in a headless browser with the key controls clicked; fails on any console or page error |
 

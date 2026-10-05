@@ -217,6 +217,38 @@ await check("patient text: confident replies were sent instantly (not drafts)", 
   assert(sent.length >= 1 && sent.every((n: any) => n.status === "sent"), `replies: ${sent.map((n: any) => n.status).join(",")}`);
 });
 
+// ---------------------------------------------------------------- emergencies go to the first free doctor
+await check("emergency: planned with the doctor free first, called in by that doctor", async () => {
+  const b0 = await board();
+  // Make sure two doctors are busy so "who frees first" is a real choice.
+  const plans = b0.snapshot.doctors.filter((d: any) => d.status === "on_duty");
+  const waitingWithBusyDoctor = b0.visits.find(
+    (v: any) => v.status === "waiting" && v.priority !== "emergency" && plans.find((d: any) => d.doctorId === v.doctorId)?.current,
+  );
+  assert(waitingWithBusyDoctor, "need a waiting patient whose doctor is busy");
+  const ref = `#${waitingWithBusyDoctor.token}`;
+  assert((await action({ action: "set_priority", visit: ref, priority: "emergency", reason: "e2e emergency" })).status === 200, "raise failed");
+  const b1 = await board();
+  const freeFirst = [...b1.snapshot.doctors].filter((d: any) => d.status === "on_duty").sort((x: any, y: any) => Date.parse(x.freeAt) - Date.parse(y.freeAt))[0];
+  const plannedWith = b1.snapshot.doctors.find((d: any) => d.queue.some((q: any) => q.visitId === waitingWithBusyDoctor.id));
+  assert(Date.parse(plannedWith.freeAt) - Date.parse(freeFirst.freeAt) <= 60_000, `planned with ${plannedWith.name} (free ${plannedWith.freeAt}) but ${freeFirst.name} is free at ${freeFirst.freeAt}`);
+  // That doctor finishes and calls the emergency in.
+  const cur = b1.visits.find((v: any) => v.doctorId === plannedWith.doctorId && v.status === "in_consult");
+  if (cur) assert((await action({ action: "finish_consult", visit: `#${cur.token}` })).status === 200, "finish failed");
+  const r = await action({ action: "start_consult", visit: ref, doctor: plannedWith.doctorId });
+  assert(r.status === 200, JSON.stringify(r.json));
+  const after = visit(await board(), waitingWithBusyDoctor.token);
+  assert(after.status === "in_consult" && after.doctorId === plannedWith.doctorId, `${after.status} with ${after.doctorId}`);
+  return `seen by ${plannedWith.name}${plannedWith.doctorId !== waitingWithBusyDoctor.doctorId ? " (moved from the busy doctor)" : ""}`;
+});
+await check("emergency only: a normal patient can't be pulled to another doctor", async () => {
+  const b = await board();
+  const v = b.visits.find((x: any) => x.status === "waiting" && x.priority === "normal");
+  const other = b.doctors.find((d: any) => d.id !== v.doctorId && d.status === "on_duty");
+  const r = await action({ action: "start_consult", visit: `#${v.token}`, doctor: other.id });
+  assert(r.status === 400, `status ${r.status}`);
+});
+
 // ---------------------------------------------------------------- doctor leaves (auto-reassign)
 await check("doctor leaves: nobody is stranded", async () => {
   const r = await clinic.doctorOffDuty("Dr. Ayesha Khan", "e2e", "staff");

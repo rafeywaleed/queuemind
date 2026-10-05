@@ -113,7 +113,8 @@ async function runTick(clock: Awaited<ReturnType<typeof claimTick>>["clock"]): P
     if (d.status !== "on_duty" || d.current || !available) continue;
     const next = d.queue.find((q) => q.state === "waiting");
     if (next && new Date(next.etaStart).getTime() <= now + MIN) {
-      const ok = await startConsult(next.token ? `#${next.token}` : next.visitId, "system").then(() => true, () => false);
+      // The plan may route a floating emergency here: the doctor who is free calls it.
+      const ok = await startConsult(next.token ? `#${next.token}` : next.visitId, "system", d.doctorId).then(() => true, () => false);
       if (ok) happened.push(`${d.name} called ${next.token ? `#${next.token} ` : ""}${first(next.patientName)}`);
     }
   }

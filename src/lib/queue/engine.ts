@@ -43,14 +43,46 @@ export function estimateMinutes(visit: Visit, doctor: Doctor): number {
   return visit.estMinutes ?? doctor.avgConsultMin;
 }
 
+/** When this doctor can start their next patient: after any delay and the consult in progress. */
+function freeAtFor(doctor: Doctor, visits: Visit[], now: number): number {
+  const availableFrom = doctor.availableAt ? Math.max(now, ms(doctor.availableAt)) : now;
+  const inConsult = visits.find((v) => v.doctorId === doctor.id && v.status === "in_consult");
+  if (!inConsult?.consultStartedAt) return availableFrom;
+  const est = estimateMinutes(inConsult, doctor);
+  const elapsed = (now - ms(inConsult.consultStartedAt)) / MIN;
+  const remaining = elapsed < est ? est - elapsed : OVERRUN_TAIL_MIN;
+  return Math.max(availableFrom, now + remaining * MIN);
+}
+
 export function computeQueue(state: ClinicState, nowInput: Date | string = new Date()): QueueSnapshot {
   const now = typeof nowInput === "string" ? ms(nowInput) : nowInput.getTime();
   const { clinic } = state;
   const alerts: Alert[] = [];
   const plans: DoctorPlan[] = [];
 
+  // Emergencies don't belong to one doctor. Each waiting emergency (in arrival order) goes to
+  // whichever on-duty doctor will be free first; each placement pushes that doctor's free time back
+  // so a second emergency goes to the next-free doctor. Near-ties keep the assigned doctor (no flapping).
+  const effectiveDoctor = new Map<string, string>();
+  const floatFlag = new Map<string, string>();
+  const nextFree = new Map(state.doctors.filter((d) => d.status === "on_duty").map((d) => [d.id, freeAtFor(d, state.visits, now)]));
+  const emergencies = state.visits
+    .filter((v) => v.status === "waiting" && v.priority === "emergency")
+    .sort((a, b) => ms(a.arrivedAt ?? iso(now)) - ms(b.arrivedAt ?? iso(now)));
+  for (const e of emergencies) {
+    let best = nextFree.has(e.doctorId) ? e.doctorId : null;
+    for (const [id, t] of nextFree) {
+      if (best === null || t < nextFree.get(best)! - MIN) best = id;
+    }
+    if (!best) continue;
+    const doc = state.doctors.find((d) => d.id === best)!;
+    effectiveDoctor.set(e.id, best);
+    nextFree.set(best, nextFree.get(best)! + estimateMinutes(e, doc) * MIN);
+    if (best !== e.doctorId) floatFlag.set(e.id, `Emergency: ${doc.name} is free first, so they'll see this patient`);
+  }
+
   for (const doctor of state.doctors) {
-    const visits = state.visits.filter((v) => v.doctorId === doctor.id);
+    const visits = state.visits.filter((v) => (effectiveDoctor.get(v.id) ?? v.doctorId) === doctor.id);
     const availableFrom = doctor.availableAt ? Math.max(now, ms(doctor.availableAt)) : now;
 
     // 1. Who is with the doctor right now, and when will the doctor be free?
@@ -87,7 +119,7 @@ export function computeQueue(state: ClinicState, nowInput: Date | string = new D
       const est = estimateMinutes(visit, doctor);
       if (visit.status === "waiting") {
         const arrived = visit.arrivedAt ? ms(visit.arrivedAt) : now;
-        const flags: string[] = [];
+        const flags: string[] = floatFlag.has(visit.id) ? [floatFlag.get(visit.id)!] : [];
         let sortKey = arrived;
         if (visit.scheduledAt) {
           const lateBy = minutes(arrived - ms(visit.scheduledAt));

@@ -212,7 +212,7 @@ function StaffControls({ board, busy, run }: { board: Board; busy: boolean; run:
                   <Check /> Finish #{current.token}
                 </MiniBtn>
               ) : next ? (
-                <MiniBtn disabled={busy || d.status === "off_duty"} onClick={() => run(`${short} calls #${next.token}`, `startConsult("#${next.token}")`, { action: "start_consult", visit: `#${next.token}` })}>
+                <MiniBtn disabled={busy || d.status === "off_duty"} onClick={() => run(`${short} calls #${next.token}`, `startConsult("#${next.token}")`, { action: "start_consult", visit: `#${next.token}`, doctor: d.doctorId })}>
                   <ArrowRight /> Call #{next.token}
                 </MiniBtn>
               ) : null}

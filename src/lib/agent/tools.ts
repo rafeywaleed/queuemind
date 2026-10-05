@@ -91,10 +91,10 @@ export const markDoctorOffDuty = tool(
   },
 );
 
-export const startConsult = tool(wrap(({ visit }: { visit: string }) => clinic.startConsult(visit, AGENT)), {
+export const startConsult = tool(wrap(({ visit, doctor }: { visit: string; doctor?: string }) => clinic.startConsult(visit, AGENT, doctor ?? null)), {
   name: "start_consult",
-  description: "Call a waiting patient in to their doctor.",
-  schema: z.object({ visit: visitRef }),
+  description: "Call a waiting patient in. For an emergency, pass `doctor` = whichever doctor is free now; it moves to them.",
+  schema: z.object({ visit: visitRef, doctor: doctorRef.optional() }),
 });
 
 export const finishConsult = tool(
