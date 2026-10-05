@@ -464,6 +464,15 @@ export async function draftNotifications(refs: string[], purpose: MessagePurpose
       continue;
     }
     const doctor = state.doctors.find((d) => d.id === v.doctorId);
+    if (purpose === "reassigned") {
+      // Only patients who were actually moved get a "you'll now see another doctor" message.
+      const since = (await clinicNow()).getTime() - 90 * 60_000;
+      const moved = (await repo.visitEvents(v.id)).some((e) => e.type === "reassigned" && new Date(e.created_at).getTime() >= since);
+      if (!moved) {
+        results.push({ ref: visitRef(v), skipped: `not reassigned: ${v.patientName} is still with ${doctor?.name ?? "the same doctor"}. If their time changed, draft a 'delay' message instead.` });
+        continue;
+      }
+    }
     const planned = findInSnapshot(snapshot, v.id)?.planned;
     if (["delay", "turn_soon", "reassigned"].includes(purpose) && !planned) {
       results.push({ ref: visitRef(v), skipped: "patient is not in the active queue" });
@@ -479,7 +488,8 @@ export async function draftNotifications(refs: string[], purpose: MessagePurpose
       facts.wait = planned.waitMin;
     }
     if (v.scheduledAt) facts.time = fmtTime(v.scheduledAt, tz);
-    const draft = await draftPatientMessage({ purpose, language: v.patientLanguage, facts, note: note ?? undefined });
+    const otherDoctors = state.doctors.filter((d) => d.id !== v.doctorId).map((d) => d.name);
+    const draft = await draftPatientMessage({ purpose, language: v.patientLanguage, facts, note: note ?? undefined, otherDoctors });
     const row = await repo.insertNotification({ visitId: v.id, patientId: v.patientId, kind: purpose, body: draft.body, draftedBy: draft.servedBy });
     await repo.logEvent({ type: "notification_drafted", actor, summary: `Drafted '${purpose}' SMS for ${v.patientName}`, visitId: v.id, payload: { notificationId: row.id, servedBy: draft.servedBy, guard: draft.guard } });
     results.push({ ref: visitRef(v), patient: v.patientName, language: v.patientLanguage, body: draft.body, writtenBy: draft.servedBy, guard: draft.guard, status: "pending_approval" });

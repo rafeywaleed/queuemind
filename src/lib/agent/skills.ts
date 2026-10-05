@@ -20,7 +20,7 @@ Front-desk reality: a late doctor creates a silent waiting room. Patients get an
    Prefer the option with lower longest-wait without pushing anyone else past the notify threshold.
    Booked appointment patients chose their doctor — move them only if the delay is long (45+ min) and say so.
 4. Apply the chosen reassignments with \`reassign_visit\`.
-5. \`draft_patient_sms\` purpose=delay for affected patients still expected (not yet arrived) so they can come later, and for long-waiting patients in the room. Purpose=reassigned for anyone moved.
+5. \`draft_patient_sms\` purpose=delay for affected patients still expected (not yet arrived) so they can come later, and for long-waiting patients in the room. Purpose=reassigned ONLY for patients you actually moved with reassign_visit (everyone else whose time changed gets purpose=delay).
 6. Summarise: delay, who is affected, what you changed, drafts waiting for approval.
 
 ## Never

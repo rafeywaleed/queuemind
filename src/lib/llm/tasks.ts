@@ -64,6 +64,8 @@ export async function draftPatientMessage(input: {
   language: string;
   facts: Record<string, string | number>;
   note?: string;
+  /** Other doctors at the clinic: a draft naming one of them would tell the patient the wrong doctor. */
+  otherDoctors?: string[];
 }): Promise<{ body: string; servedBy: ProviderName | "template"; guard: string | null }> {
   const facts = { ...input.facts, note: input.note ?? "" };
   const template = TEMPLATES[input.purpose](facts);
@@ -82,6 +84,12 @@ export async function draftPatientMessage(input: {
     const allowed = new Set(JSON.stringify(facts).match(/\d+/g) ?? []);
     const invented = (data.message.match(/\d+/g) ?? []).filter((n) => !allowed.has(n));
     if (invented.length) return { body: template, servedBy: "template", guard: `model introduced numbers not in facts (${invented.join(", ")}) — used template` };
+    // Names guard: the patient's doctor comes from the facts; any other doctor's name is a mix-up.
+    const wrong = (input.otherDoctors ?? []).filter((name) => {
+      const first = name.replace(/^Dr\.?\s+/i, "").split(/\s+/)[0];
+      return first.length > 2 && new RegExp(`\\b${first}\\b`, "i").test(data.message);
+    });
+    if (wrong.length) return { body: template, servedBy: "template", guard: `model named a different doctor (${wrong.join(", ")}) — used template` };
     return { body: data.message, servedBy: provider, guard: null };
   } catch {
     return { body: template, servedBy: "template", guard: "fast lane unavailable — used template" };

@@ -201,6 +201,12 @@ await check("outbox: a duplicate draft within 20 min is skipped", async () => {
   const again = await clinic.draftNotifications([v.token ? `#${v.token}` : v.id], "delay", null, "agent");
   assert((again[0] as any).skipped, JSON.stringify(again));
 });
+await check("guardrail: a 'reassigned' SMS needs an actual reassignment", async () => {
+  const moved = await clinic.draftNotifications(["#9"], "reassigned", null, "agent");
+  assert(!(moved[0] as any).skipped, `reassigned patient was skipped: ${JSON.stringify(moved)}`);
+  const stayed = await clinic.draftNotifications(["#4"], "reassigned", "Moved to Dr. Bilal Ahmed", "agent");
+  assert(/not reassigned/.test((stayed[0] as any).skipped ?? ""), JSON.stringify(stayed));
+});
 await check("numbers guard: drafts only contain numbers from the facts", async () => {
   const pending = (await http("GET", "/api/notifications")).json.filter((n: any) => n.kind === "delay");
   const ok = pending.every((n: any) => /\d/.test(n.body));
