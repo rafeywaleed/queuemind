@@ -29,6 +29,15 @@ function needVisit(state: ClinicState, ref: string) {
   return v;
 }
 
+/** Emergencies aren't tied to one doctor: the engine sends them to whoever frees up first. */
+async function emergencyRoute(visitId: string) {
+  const { snapshot } = await stateAndBoard();
+  const found = findInSnapshot(snapshot, visitId);
+  return found
+    ? `first free doctor: currently ${found.doctor.name}, about ${found.planned.waitMin} min (this updates live as consults end)`
+    : "first free doctor";
+}
+
 function needDoctor(state: ClinicState, ref: string) {
   const d = findDoctorByRef(state, ref);
   if (!d) throw new ClinicError(`No doctor matching "${ref}". Doctors: ${state.doctors.map((x) => x.name).join(", ")}`);
@@ -141,7 +150,7 @@ export async function registerWalkIn(
     });
     return {
       token: `#${token}`,
-      doctor: doctor.name,
+      doctor: priority === "emergency" ? await emergencyRoute(visit.id) : doctor.name,
       priority,
       triage: {
         redFlagRules: redFlags.matches.length ? redFlags.matches : "none",
@@ -157,7 +166,7 @@ export async function registerWalkIn(
       },
       instruction:
         priority === "emergency"
-          ? "EMERGENCY: tell the front desk to alert the doctor/nurse NOW. If life-threatening signs, direct to emergency services. Do not make the patient wait in line."
+          ? "EMERGENCY: tell the front desk to alert the doctor/nurse NOW. If life-threatening signs, direct to emergency services. Emergencies are not tied to one doctor and must not be reassigned: whichever doctor frees up first sees them. Quote the doctor and wait exactly as given above."
           : undefined,
     };
   });
@@ -370,7 +379,7 @@ export async function setPriority(ref: string, level: Priority, reason: string, 
     }
     await repo.updateVisit(v.id, { priority: level, priority_source: actor });
     await repo.logEvent({ type: "priority_change", actor, summary: `${v.patientName}: ${v.priority} → ${level} (${reason})`, visitId: v.id, doctorId: v.doctorId, payload: { from: v.priority, to: level, reason } });
-    return { patient: v.patientName, from: v.priority, to: level };
+    return { patient: v.patientName, from: v.priority, to: level, ...(level === "emergency" ? { seenBy: await emergencyRoute(v.id) } : {}) };
   });
 }
 
@@ -381,6 +390,9 @@ export async function reassign(ref: string, doctorRef: string, reason: string, a
     if (to.status !== "on_duty") throw new ClinicError(`${to.name} is off duty.`);
     if (v.doctorId === to.id) throw new ClinicError(`${v.patientName} is already with ${to.name}.`);
     if (!["waiting", "scheduled"].includes(v.status)) throw new ClinicError(`${v.patientName} is ${v.status}; cannot reassign.`);
+    if (v.priority === "emergency" && v.status === "waiting") {
+      throw new ClinicError(`No reassignment needed: ${v.patientName} is an emergency, and emergencies go to the ${await emergencyRoute(v.id)}.`);
+    }
     const from = state.doctors.find((d) => d.id === v.doctorId);
     await repo.updateVisit(v.id, { doctor_id: to.id });
     await repo.logEvent({ type: "reassigned", actor, summary: `${v.patientName}: ${from?.name} → ${to.name} (${reason})`, visitId: v.id, doctorId: to.id, payload: { from: from?.id, reason } });

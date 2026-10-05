@@ -42,3 +42,6 @@ yarn-error.log*
 next-env.d.ts
 dev.log
 prod.log
+
+# launch video work
+brag-output*/
