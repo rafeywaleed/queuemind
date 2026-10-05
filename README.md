@@ -2,6 +2,8 @@
 
 **Live:** https://queuemind-demo.vercel.app · **Stack:** Next.js + Tailwind + shadcn · Supabase · LangGraph Deep Agents (`deepagents`)
 
+**Submission note** (problem, harness design, what it does, time taken, what's next): [NOTE.md](NOTE.md)
+
 A doctor is called away, a consult runs long, a booked patient doesn't show, a walk-in has chest pain, a doctor has to leave early. Small clinics run their waiting room on paper tokens, so nobody replans and nobody tells the patients. QueueMind is a deep agent for the front desk that **replans the queue when reality changes, tells the right patients, and keeps humans in charge** of anything it writes.
 
 ## Try it in two minutes
