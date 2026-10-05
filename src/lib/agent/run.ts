@@ -56,6 +56,11 @@ const REQUIRED_ACTIONS: { when: RegExp; unless?: RegExp; need: string[]; nudge: 
     need: ["mark_doctor_off_duty", "report_doctor_delay"],
     nudge: "The doctor's absence from the previous message is not recorded yet. Record it now (mark_doctor_off_duty if they won't return today, else report_doctor_delay), then reply in two lines.",
   },
+  {
+    when: /\bDr\.?\s+\w+[^.]*\b(late|delayed|stuck|step(?:ped)? out|called away|running behind|back in)\b/i,
+    need: ["draft_patient_sms"],
+    nudge: "Finish the delay workflow now. If the delay isn't recorded yet, report_doctor_delay. Then draft_patient_sms purpose=delay for the patients whose expected time moved by 15+ minutes (purpose=reassigned only for anyone you actually moved). Drafts wait for staff approval. Then reply with a short briefing that lists only what tools did.",
+  },
 ];
 
 export async function* runAgentTurn(threadId: string, message: string): AsyncGenerator<AgentEvent> {
