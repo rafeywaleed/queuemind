@@ -16,6 +16,8 @@ const MIN = 60_000;
 /** When a consult runs past its estimate, assume this many more minutes. */
 const OVERRUN_TAIL_MIN = 3;
 const OVERRUN_ALERT_MIN = 10;
+/** How far ahead bookings count as "today's queue". */
+const PLAN_HORIZON_MIN = 12 * 60;
 
 export const PRIORITY_RANK: Record<Priority, number> = { emergency: 0, urgent: 1, normal: 2 };
 
@@ -132,6 +134,8 @@ export function computeQueue(state: ClinicState, nowInput: Date | string = new D
         candidates.push({ visit, state: "waiting", readyAt: now, sortKey, arrivalKey: arrived, est, flags, bumps: 0 });
       } else if (visit.status === "scheduled" && visit.scheduledAt) {
         const scheduled = ms(visit.scheduledAt);
+        // Bookings for a later day (e.g. a follow-up next week) are not part of today's queue.
+        if (scheduled - now > PLAN_HORIZON_MIN * MIN) continue;
         const overdue = minutes(now - scheduled);
         if (overdue > clinic.noShowMinutes) {
           alerts.push({

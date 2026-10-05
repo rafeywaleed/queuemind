@@ -183,10 +183,13 @@ await check("outbox: draft → pending, approve → sent, reject → rejected", 
   assert(drafts.every((d: any) => d.status === "pending_approval" || d.skipped), JSON.stringify(drafts).slice(0, 200));
   const pending = (await http("GET", "/api/notifications?status=pending_approval")).json;
   assert(pending.length >= 2, `pending ${pending.length}`);
-  assert((await http("POST", "/api/notifications", { id: pending[0].id, decision: "sent" })).json.status === "sent", "approve failed");
-  approvedVisit = pending[0].visit_id;
-  assert((await http("POST", "/api/notifications", { id: pending[1].id, decision: "rejected" })).json.status === "rejected", "reject failed");
-  assert((await http("POST", "/api/notifications", { id: pending[0].id, decision: "sent" })).status !== 200, "double approve accepted");
+  const delayDraft = pending.find((n: any) => n.kind === "delay");
+  assert(delayDraft, "no delay draft pending");
+  assert((await http("POST", "/api/notifications", { id: delayDraft.id, decision: "sent" })).json.status === "sent", "approve failed");
+  approvedVisit = delayDraft.visit_id;
+  const other = pending.find((n: any) => n.id !== delayDraft.id);
+  assert((await http("POST", "/api/notifications", { id: other.id, decision: "rejected" })).json.status === "rejected", "reject failed");
+  assert((await http("POST", "/api/notifications", { id: delayDraft.id, decision: "sent" })).status !== 200, "double approve accepted");
 });
 await check("outbox: a duplicate draft within 20 min is skipped", async () => {
   // Re-draft for the patient whose message was approved (a rejected draft may legitimately be redone).

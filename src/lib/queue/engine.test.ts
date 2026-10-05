@@ -112,6 +112,13 @@ describe("queue engine", () => {
     expect(snap.alerts.some((a) => a.type === "idle_doctor" && a.doctorId === "b")).toBe(true);
   });
 
+  it("leaves bookings for a later day (e.g. next week's follow-up) out of today's queue", () => {
+    const followUp = visit({ kind: "follow_up", status: "scheduled", scheduledAt: at(4 * 24 * 60), arrivedAt: null, patientName: "Next week" });
+    const today = visit({ kind: "appointment", status: "scheduled", scheduledAt: at(30), arrivedAt: null, patientName: "Later today" });
+    const snap = computeQueue(state([followUp, today]), NOW);
+    expect(order(snap)).toEqual(["Later today"]);
+  });
+
   it("asks for reassignment when a doctor is off duty", () => {
     const v = visit({ doctorId: "a" });
     const snap = computeQueue(state([v], [doctor("a", { status: "off_duty" })]), NOW);
